@@ -299,6 +299,7 @@ function validateDatabase(semantics) {
     }
 
     // Payments to credit cards should be positive (money arriving to pay down balance)
+    // Exclude returned/reversed payments — those are debits (balance went back up)
     const negativePayments = db.prepare(`
       SELECT COUNT(*) as cnt FROM transactions
       WHERE account_id = ? AND amount < 0
@@ -306,6 +307,9 @@ function validateDatabase(semantics) {
           OR description LIKE '%ACH DEPOSIT%'
           OR description LIKE '%Thank%'
           OR type = 'Payment')
+        AND description NOT LIKE '%Returned%'
+        AND description NOT LIKE '%Reversal%'
+        AND (type IS NULL OR type != 'Reversal')
     `).get(accountId);
 
     if (negativePayments.cnt === 0) {
@@ -318,6 +322,9 @@ function validateDatabase(semantics) {
             OR description LIKE '%ACH DEPOSIT%'
             OR description LIKE '%Thank%'
             OR type = 'Payment')
+          AND description NOT LIKE '%Returned%'
+          AND description NOT LIKE '%Reversal%'
+          AND (type IS NULL OR type != 'Reversal')
         LIMIT 5
       `).all(accountId);
       fail(`${accountId}: ${negativePayments.cnt} negative payment transactions (should be positive)`);

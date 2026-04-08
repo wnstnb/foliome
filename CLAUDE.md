@@ -259,7 +259,7 @@ Task-phase failures (balances, transactions) go through a 4-level recovery syste
 - Real estate staleness (refreshes monthly, 25-day threshold)
 - Dedup on import prevents duplicate transactions
 - Slug immutability validation (`scripts/validate-slugs.js`) — checks institution slugs are consistent across config files, sync output, accounts.json, data-semantics.json, and credential-map.json. Wired into `readers/run.js` (exit on failure) and `sync-engine/import.js` (skip on failure). Detects orphaned sync output files.
-- Data semantics enforcement — `normalizeAmountSign()` warns loudly (once per institution per run) when no `data-semantics.json` entry exists, so silent pass-through is no longer invisible
+- Data semantics gate — `import.js` blocks transaction import for any institution without a `data-semantics.json` entry and directs the user to run `scripts/discover-semantics.js`. Use `--force` to bypass (imports amounts as-is without sign normalization)
 
 ## Key Entry Points
 
