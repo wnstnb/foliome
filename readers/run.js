@@ -49,6 +49,15 @@ try {
   process.exit(1);
 }
 
+// Slug immutability check
+const { validateSlug } = require('../scripts/validate-slugs');
+const slugCheck = validateSlug(institution);
+if (!slugCheck.ok) {
+  console.error(`[${institution}] Slug validation failed:`);
+  slugCheck.errors.forEach(e => console.error(`  ${e}`));
+  process.exit(1);
+}
+
 async function promptStdin(message) {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   return new Promise(resolve => {

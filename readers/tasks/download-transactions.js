@@ -9,9 +9,7 @@
 const fs = require('fs');
 const path = require('path');
 const { matchAccount, addAlias } = require('../account-matcher');
-
-const DOWNLOAD_DIR = path.join(__dirname, '..', '..', 'data', 'downloads');
-if (!fs.existsSync(DOWNLOAD_DIR)) fs.mkdirSync(DOWNLOAD_DIR, { recursive: true });
+const { transactionPath, statementPath, zipPath, unzipDir } = require('./download-path');
 
 /**
  * @param {import('playwright').Page} page - Authenticated page
@@ -76,7 +74,7 @@ async function runDirectExport(page, config, options) {
   ]);
 
   const acct = accountList[0] || { accountId: `${institution}-all`, accountType: 'education' };
-  const savePath = path.join(DOWNLOAD_DIR, `${institution}-${Date.now()}.csv`);
+  const savePath = transactionPath(institution, acct.accountId);
   await download.saveAs(savePath);
   console.log(`[${institution}:txns] Downloaded: ${savePath} (${fs.statSync(savePath).size} bytes)`);
 
@@ -180,7 +178,7 @@ async function runExportModal(page, config, options) {
   ]);
 
   const acct = accountList[0] || { accountId: `${institution}-all`, accountType: 'credit' };
-  const savePath = path.join(DOWNLOAD_DIR, `${institution}-${Date.now()}.csv`);
+  const savePath = transactionPath(institution, acct.accountId);
   await download.saveAs(savePath);
   console.log(`[${institution}:txns] Downloaded: ${savePath} (${fs.statSync(savePath).size} bytes)`);
 
@@ -264,7 +262,7 @@ async function runCentralDialog(page, config, options) {
       await page.waitForTimeout(500);
     }
 
-    const csvPath = await downloadCSV(page, txnConfig.downloadSubmitSelector, acct.accountId);
+    const csvPath = await downloadCSV(page, txnConfig.downloadSubmitSelector, acct.accountId, institution);
     if (csvPath) {
       const transactions = parseCSV(csvPath, acct, institution, 0, txnConfig.csvColumns);
       console.log(`[${institution}:txns] Parsed ${transactions.length} transactions for ${acct.accountId}`);
@@ -389,7 +387,7 @@ async function runPerAccount(page, config, options) {
     }
 
     // Download
-    const csvPath = await downloadCSV(page, txnConfig.downloadSubmitSelector, acct.accountId);
+    const csvPath = await downloadCSV(page, txnConfig.downloadSubmitSelector, acct.accountId, institution);
     if (csvPath) {
       const transactions = parseCSV(csvPath, acct, institution);
       console.log(`[${institution}:txns] Parsed ${transactions.length} transactions for ${acct.accountId}`);
@@ -491,21 +489,19 @@ async function runPdfStatements(page, config, options) {
         dlAllButtons.nth(i).click(),
       ]);
 
-      const origName = download.suggestedFilename();
-      const zipPath = path.join(DOWNLOAD_DIR, `${institution}-${origName}`);
-      await download.saveAs(zipPath);
-      console.log(`[${institution}:txns] Downloaded: ${zipPath} (${fs.statSync(zipPath).size} bytes)`);
+      const zPath = zipPath(institution);
+      await download.saveAs(zPath);
+      console.log(`[${institution}:txns] Downloaded: ${zPath} (${fs.statSync(zPath).size} bytes)`);
 
       // Unzip
-      const unzipDir = path.join(DOWNLOAD_DIR, `${institution}-unzipped-${Date.now()}`);
-      fs.mkdirSync(unzipDir, { recursive: true });
+      const uzDir = unzipDir(institution);
 
       try {
-        execSync(`unzip -o "${zipPath}" -d "${unzipDir}"`, { encoding: 'utf-8' });
+        execSync(`unzip -o "${zPath}" -d "${uzDir}"`, { encoding: 'utf-8' });
       } catch {
         // On Windows, try PowerShell
         try {
-          execSync(`powershell -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${unzipDir}' -Force"`, { encoding: 'utf-8' });
+          execSync(`powershell -Command "Expand-Archive -Path '${zPath}' -DestinationPath '${uzDir}' -Force"`, { encoding: 'utf-8' });
         } catch (e) {
           console.error(`[${institution}:txns] Unzip failed: ${e.message}`);
           continue;
@@ -513,13 +509,13 @@ async function runPdfStatements(page, config, options) {
       }
 
       // Find all PDFs in the unzipped directory
-      const pdfFiles = fs.readdirSync(unzipDir).filter(f => f.toLowerCase().endsWith('.pdf'));
+      const pdfFiles = fs.readdirSync(uzDir).filter(f => f.toLowerCase().endsWith('.pdf'));
       console.log(`[${institution}:txns] Found ${pdfFiles.length} PDFs in ZIP`);
 
       // Parse each PDF with LiteParse — raw text saved for agent extraction
       if (!allPendingPdfs) allPendingPdfs = [];
       for (const pdfFile of pdfFiles) {
-        const pdfPath = path.join(unzipDir, pdfFile);
+        const pdfPath = path.join(uzDir, pdfFile);
         console.log(`[${institution}:txns] Extracting text from ${pdfFile}...`);
 
         try {
@@ -592,7 +588,7 @@ async function runPerAccountStatements(page, config, options, allTransactions) {
           page.waitForEvent('download', { timeout: 15000 }),
           btn.click(),
         ]);
-        const savePath = path.join(DOWNLOAD_DIR, `${institution}-${acct.accountId}-${Date.now()}.pdf`);
+        const savePath = statementPath(institution, acct.accountId);
         await download.saveAs(savePath);
 
         const result = await parsePdfStatement(savePath, institution, [acct]);
@@ -769,13 +765,12 @@ async function runReportBased(page, config, options) {
             firstDl.click(),
           ]);
 
-          const fileName = `${institution}-report-${Date.now()}.csv`;
-          const savePath = path.join(DOWNLOAD_DIR, fileName);
+          const acct = accountList[0] || { accountId: `${institution}-all`, accountType: 'checking' };
+          const savePath = transactionPath(institution, acct.accountId);
           await download.saveAs(savePath);
           console.log(`[download] Saved: ${savePath}`);
 
-          // Parse — report covers all accounts, assign to first account or generic
-          const acct = accountList[0] || { accountId: `${institution}-all`, accountType: 'checking' };
+          // Parse — report covers all accounts
           const transactions = parseCSV(savePath, acct, institution);
           console.log(`[${institution}:txns] Parsed ${transactions.length} transactions`);
 
@@ -1049,15 +1044,14 @@ async function fillDateInput(page, selector, dateStr) {
 /**
  * Click download and capture the downloaded file.
  */
-async function downloadCSV(page, submitSelector, accountId) {
+async function downloadCSV(page, submitSelector, accountId, institution) {
   try {
     const [download] = await Promise.all([
       page.waitForEvent('download', { timeout: 15000 }),
       page.locator(submitSelector).click(),
     ]);
 
-    const fileName = `${accountId}-${Date.now()}.csv`;
-    const savePath = path.join(DOWNLOAD_DIR, fileName);
+    const savePath = transactionPath(institution, accountId);
     await download.saveAs(savePath);
     console.log(`[download] Saved: ${savePath}`);
     return savePath;

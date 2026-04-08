@@ -186,6 +186,7 @@ readers/                        Browser automation primitives
     extract-balances.js         Dashboard text capture for agent extraction
     download-transactions.js    All transaction download patterns + PDF pipeline
     download-statements.js      Statement PDF downloads for balance extraction
+    download-path.js            Structured path helper for all downloads
     PATTERNS.md                 Visual guide to transaction download patterns
 connectors/                     API integrations (no browser)
 sync-engine/                    Layer 2 persistence
@@ -204,6 +205,7 @@ scripts/
   credentials.js                Credential resolution (Bitwarden vault → .env fallback)
   encrypt-env.js                Pre-flight encryption for sensitive .env values
   validate-data.js              Data validation (semantics, normalization, database invariants)
+  validate-slugs.js             Slug consistency checker across all config surfaces
 config/                         Configuration
   institutions-status.md        Per-institution status, MFA details, download patterns
   budgets.json                  Monthly budget limits per category (for Budget tab)
