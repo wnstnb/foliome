@@ -1,0 +1,7 @@
+{
+  "large_transaction_threshold": 500,
+  "low_balance_threshold": 1000,
+  "unusual_spending_multiplier": 3,
+  "stale_data_hours": 48,
+  "payment_reminder_days": 5
+}
