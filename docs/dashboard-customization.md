@@ -22,7 +22,7 @@ Telegram Mini App or standalone browser
 |------|------|
 | `scripts/dashboard-queries.js` | SQL query functions — all data access lives here |
 | `scripts/dashboard-server.js` | HTTP server — auth, API routes, static serving |
-| `dashboard/src/tabs/` | One React component per tab (Overview, Transactions, Budget, Portfolio, Subs) |
+| `dashboard/src/tabs/` | One React component per tab (Brief, Overview, Transactions, Budget, Portfolio, Subs, Wiki) |
 | `dashboard/src/components/shared/` | Reusable components (KPICard, AccountRow, TransactionRow, etc.) |
 | `dashboard/src/components/overlays/` | Full-screen overlays (Financial Health) |
 | `dashboard/src/lib/format.ts` | Number formatting (accounting parentheses, abbreviations) |
@@ -250,12 +250,12 @@ To rearrange: reorder the JSX in the component. To add a new KPI:
 
 ```json
 {
-  "Restaurants": 800,
-  "Groceries": 600,
-  "Shopping": 400,
-  "Subscription": 200,
-  "Entertainment": 200,
-  "Utilities": 300
+  "Restaurants": 500,
+  "Groceries": 400,
+  "Shopping": 300,
+  "Subscription": 100,
+  "Entertainment": 150,
+  "Utilities": 200
 }
 ```
 

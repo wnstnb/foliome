@@ -4,7 +4,7 @@ Design reference mockup: `data/exports/dashboard-mockup.html`
 
 ## Overview
 
-A mobile-first financial dashboard served as a Telegram Mini App. Primary surface is Telegram's embedded WebView (430px max viewport). Secondary surface is standalone browser. Single-user, real-time data from SQLite, regenerated on each request.
+A responsive financial dashboard served as a Telegram Mini App. Mobile layout (430px) in Telegram's embedded WebView, wider layout at md (768px+) and lg (1024px+) breakpoints in standalone browser or expanded Telegram windows. Single-user, real-time data from SQLite via API endpoints.
 
 ## Architecture
 
@@ -96,23 +96,35 @@ Deltas on liabilities use contextual language instead of raw signed numbers:
 - Account row height: 48px+ (10px vertical + 12px horizontal padding)
 - Transaction row height: 48px+ (12px vertical padding)
 
+### Responsive Layout
+
+| Breakpoint | Container | Behavior |
+|------------|-----------|----------|
+| `< md` (768px) | `max-w-[430px]` | Mobile layout — single column, compact padding |
+| `≥ md` (768px) | `max-w-3xl` | Desktop layout — 2-col account groups, side-by-side charts, 2-col wiki grid |
+| `≥ lg` (1024px) | `max-w-5xl` | Wide desktop — more breathing room |
+
+Tab bar text scales up at `md:` (`text-sm`, larger padding). Wiki page view caps at `680px` reading width on desktop.
+
 ### Icons
 
-- **Brand logos:** Simple Icons CDN (`cdn.simpleicons.org`) for Chase, Apple, PayPal, YouTube, Netflix, Google, Anthropic, X
+- **Brand logos:** Simple Icons CDN (`cdn.simpleicons.org`) for ~40 common US institutions (Chase, BofA, Wells Fargo, Amex, Discover, Robinhood, Venmo, Cash App, etc.)
 - **Fallback:** Colored initial boxes (2-letter abbreviation) in rounded 32px squares with 10% opacity tinted backgrounds
 - **UI icons:** Lucide (ships with shadcn) — search, chevron, back arrow, sun/moon
 
 ## Navigation Structure
 
-### Main Tabs (5)
+### Main Tabs (7)
 
 | Tab | Content |
 |-----|---------|
-| **Overview** | Hero net worth + sparkline, assets/liabilities/savings KPIs, quick alerts, account list grouped by type |
-| **Transactions** | Search + date/account/category filters, Spending/Activity sub-tabs |
+| **Brief** | Personalized daily financial narrative — net worth headline, goal progress, budget pulse, upcoming payments |
+| **Overview** | Hero net worth + sparkline, assets/liabilities/savings KPIs, quick alerts, account list grouped by type (2-col grid on desktop) |
+| **Transactions** | Search + date/account/category filters, Spending/Activity sub-tabs (donut + categories side-by-side on desktop) |
 | **Budget** | Per-category progress bars, total budget gauge |
 | **Portfolio** | Holdings allocation donut + top positions list |
 | **Subs** | Subscription tracker with monthly/annual costs, annual total alert |
+| **Wiki** | Read-only browser for agent memory wiki — index grouped by type (2-col grid on desktop), secure markdown page viewer |
 
 ### Sub-tabs (within Transactions)
 
@@ -205,8 +217,12 @@ The dashboard-server exposes these API endpoints (all require session token via 
 | `GET /api/subscriptions` | — | Detected recurring charges |
 | `GET /api/health` | — | Monthly net worth, assets, liabilities, savings rate history |
 | `GET /api/budgets` | — | Budget config + current month spending per category |
+| `GET /api/brief` | — | Daily brief JSON (exists flag + headline, sections) |
+| `GET /api/wiki` | — | Wiki index (pages grouped by type, with frontmatter + summary) |
+| `GET /api/wiki/page` | `path` | Single wiki page (frontmatter + markdown body) |
+| `GET /api/wiki/asset` | `path` | Wiki asset file (images, PDFs — path-confined, extension allowlisted) |
 
-Data comes from SQLite queries via `dashboard-queries.js` (< 100ms each). See `docs/dashboard-customization.md` for adding new endpoints.
+Data comes from SQLite queries via `dashboard-queries.js` (< 100ms each) and wiki files via `wiki-queries.js`. All responses include a `Content-Security-Policy` header. See `docs/dashboard-customization.md` for adding new endpoints.
 
 ## Telegram Mini App Integration
 
