@@ -9,12 +9,8 @@ gmail-token.json
 # Data (SQLite, sync output, chrome profiles, downloads, screenshots)
 data/
 
-# Config files with personal financial data
-config/accounts.json
-config/credential-map.json
-config/institutions-status.md
-config/payment-schedule.json
-config/alert-config.json
+# Config (populated from config-templates/ on setup — personal data after customization)
+config/
 
 # Claude Code local settings (contains permission rules with personal IDs)
 .claude/settings.local.json
