@@ -28,6 +28,104 @@ Process exits — plaintext gone from memory
 
 2. **.env fallback** — credentials stored directly in `.env` as `<SLUG>_USERNAME` / `<SLUG>_PASSWORD`. Encrypted at rest by dotenvx. The `.env.keys` file holds the decryption key and is gitignored.
 
+### Credential Resolution Order
+
+When `getCredentials(institution, credentials)` is called at login time:
+
+1. Check `config/credential-map.json` for a Bitwarden vault item ID mapped to this institution
+2. If found → `bw get item <id>` to fetch credentials from vault
+3. If not found or Bitwarden unavailable → fall back to `process.env` (decrypted by dotenvx)
+
+### Flow 1: New User With .env Credentials
+
+```
+1. User clones repo, creates .env:
+   CHASE_USERNAME=myuser
+   CHASE_PASSWORD=mypassword
+
+2. User talks to the agent ("sync my accounts", "add a new bank", etc.)
+
+3. Pre-flight runs automatically (scripts/encrypt-env.js):
+   - Scans .env for sensitive keys (*_USERNAME, *_PASSWORD, BW_*)
+   - Detects CHASE_USERNAME and CHASE_PASSWORD are plaintext
+   - Encrypts them via dotenvx → values become encrypted:BKJx...
+   - .env.keys created with decryption key (gitignored)
+
+4. .env now looks like:
+   CHASE_USERNAME="encrypted:BKJxjW6op8dk..."
+   CHASE_PASSWORD="encrypted:BGdMHM+J3s35..."
+
+5. At sync time:
+   - dotenvx loads .env, decrypts using .env.keys
+   - process.env.CHASE_USERNAME has the plaintext (in memory only)
+   - browser-reader.js types it into the login form
+   - Process exits, plaintext gone
+```
+
+The user never needs to run encryption manually. The pre-flight runs before every sync and catches any new plaintext credentials.
+
+**Important:** All credentials must be single-quoted in `.env` (e.g., `PASSWORD='my#pa$$word'`). Single quotes prevent `#` truncation, `$` interpolation, and backtick expansion. The pre-flight encryption script enforces this automatically.
+
+### Flow 2: Setting Up Bitwarden
+
+```
+1. User gets Bitwarden API key from vault settings, adds to .env:
+   BW_CLIENTID=user.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+   BW_CLIENTSECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+   BW_PASSWORD="MyMasterPassword"
+
+2. Pre-flight encrypts all three BW_* values automatically.
+
+3. User asks agent to set up vault mapping:
+   - Agent runs: node scripts/vault.js list-banks
+   - Output shows item names + first 3 chars of username + Bitwarden item IDs
+   - Agent asks user to confirm which items map to which institutions
+
+4. Agent maps each institution:
+   - node scripts/vault.js map chase <item-id>
+   - Writes to config/credential-map.json (safe to commit — IDs are not secrets)
+
+5. At sync time:
+   - sync-all.js unlocks Bitwarden once, shares session with all child processes
+   - Each bank's login calls getCredentials(institution, config)
+   - getCredentials checks credential-map.json → finds Bitwarden item ID
+   - Fetches that specific item from vault → returns { username, password }
+   - browser-reader.js types credentials into login form
+   - Credentials never logged, never printed, never touch disk
+```
+
+### Vault Scoping
+
+The runtime credential module (`scripts/credentials.js`) can ONLY fetch item IDs explicitly listed in `credential-map.json`. It never runs `bw list`, `bw search`, or browses the vault. The vault helper (`scripts/vault.js`) is the only place that searches the vault, and it only runs during setup — never during syncs.
+
+### Vault CLI Helper
+
+`scripts/vault.js` — used during setup only, never during syncs:
+
+```
+node scripts/vault.js status              # check bw CLI installed, logged in, vault unlocked
+node scripts/vault.js list-banks          # search vault for bank login items (masked output)
+node scripts/vault.js search <term>       # search vault for any login item by keyword
+node scripts/vault.js map <slug> <id>     # add institution → Bitwarden item mapping
+node scripts/vault.js test <slug>         # verify credentials can be fetched (masked output)
+node scripts/vault.js migrate             # interactive: match institutions to vault items
+```
+
+### Required .env Variables
+
+**For Bitwarden (optional, recommended):**
+- `BW_CLIENTID` — Bitwarden API client ID
+- `BW_CLIENTSECRET` — Bitwarden API client secret
+- `BW_PASSWORD` — Bitwarden master password (must be quoted if it contains `#`)
+
+**For .env-only mode (no Bitwarden):**
+- `<SLUG>_USERNAME` / `<SLUG>_PASSWORD` per institution (e.g., `CHASE_USERNAME`, `CHASE_PASSWORD`)
+
+The `.env` slug convention: uppercase, hyphens removed (e.g., `capital-one` → `CAPITALONE`, `apple-card` → `APPLECARD`).
+
+**For Dashboard Mini App (optional):**
+- `DASHBOARD_BOT_TOKEN` — only needed if the bot sending the `web_app` button differs from `TELEGRAM_BOT_TOKEN`. Auto-detected from the Claude Code Telegram plugin if installed. See `docs/telegram-setup.md` for details.
+
 ## Encryption at Rest
 
 `scripts/encrypt-env.js` runs automatically before every sync. It scans `.env` for sensitive key patterns (`*_USERNAME`, `*_PASSWORD`, `BW_PASSWORD`, `BW_CLIENTID`, `BW_CLIENTSECRET`) and encrypts any plaintext values via dotenvx. The user never needs to run encryption manually.
@@ -137,7 +235,5 @@ The `.gitignore` ensures sensitive files never enter version control:
 - `.env`, `.env.keys` — credentials and encryption keys
 - `*-tokens.json` — API token storage files
 - `data/` — all financial data (sync output, database, chrome profiles, downloads)
-- `config/accounts.json` — account registry with last-4 digits
-- `config/credential-map.json` — Bitwarden vault item mappings
-- `config/institutions-status.md` — per-institution details
+- `config/` — all config files (populated from `config-templates/` on setup, contains personal data after customization)
 - `.claude/settings.local.json` — local permission rules with personal IDs

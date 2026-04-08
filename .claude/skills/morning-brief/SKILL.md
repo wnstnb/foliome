@@ -122,7 +122,17 @@ Also save a dated copy: `data/brief/YYYY-MM-DD.json`.
 
 ### Step 2: Respond to User
 
-Send a conversational summary to the user (Telegram or CLI). This is shorter than the JSON — just the highlights:
+Send a conversational summary to the user (Telegram or CLI). This is shorter than the JSON — just the highlights.
+
+**If running as a Telegram agent**, also present the dashboard as a Mini App button so the user can tap to see the full Brief tab:
+
+```bash
+node scripts/telegram-notify.js --dashboard "<chatId>" "Your brief is ready. Tap to see the full view." "<tunnel-url>"
+```
+
+Use the `chatId` from the inbound Telegram message and the active cloudflared tunnel URL. Do NOT send the dashboard URL as a plain text link — it won't work without Mini App initData.
+
+Conversational summary example:
 
 ```
 Good morning. Here's your snapshot for April 7.

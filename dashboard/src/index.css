@@ -139,6 +139,10 @@
   transition: width 0.6s ease;
 }
 
+/* ─── Scrollbar Hide (horizontal-only scroll containers) ─── */
+.hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+.hide-scrollbar::-webkit-scrollbar { display: none; }
+
 /* ─── Safe Area ─── */
 .safe-bottom { padding-bottom: env(safe-area-inset-bottom, 80px); }
 

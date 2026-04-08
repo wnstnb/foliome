@@ -20,9 +20,7 @@
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
-
-const DOWNLOAD_DIR = path.join(__dirname, '..', '..', 'data', 'downloads');
-if (!fs.existsSync(DOWNLOAD_DIR)) fs.mkdirSync(DOWNLOAD_DIR, { recursive: true });
+const { statementPath } = require('./download-path');
 
 const ACCOUNT_TYPES = ['checking', 'savings', 'credit', 'mortgage'];
 
@@ -103,15 +101,14 @@ async function run(page, config, options = {}) {
 
       // Download up to `months` statements
       for (let rowIdx = 0; rowIdx < months; rowIdx++) {
-        const filename = `${institution}-stmt-${acct.accountId}-${Date.now()}.pdf`;
-        const filepath = path.join(DOWNLOAD_DIR, filename);
+        const filepath = statementPath(institution, acct.accountId);
 
         try {
           const dl = await typeConfig.download(page, acct.accountId, rowIdx);
           await dl.saveAs(filepath);
 
           const size = fs.statSync(filepath).size;
-          console.log(`[${institution}:statements]   Downloaded: ${filename} (${size} bytes)`);
+          console.log(`[${institution}:statements]   Downloaded: ${path.basename(filepath)} (${size} bytes)`);
 
           // Parse PDF via LiteParse
           try {
@@ -123,7 +120,7 @@ async function run(page, config, options = {}) {
             results.push({
               accountId: acct.accountId,
               accountType: acct.accountType || type,
-              fileName: filename,
+              fileName: path.basename(filepath),
               text: pdfText,
               source: 'pdf',
             });

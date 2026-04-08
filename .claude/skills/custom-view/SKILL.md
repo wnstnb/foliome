@@ -206,9 +206,13 @@ ls dashboard/dist/index.html && echo "Build output exists"
 
 ### Step 11: Report success
 
-Tell the user the new tab is ready. If running as a Telegram agent, send a new message with a `web_app` inline keyboard button so they can tap to see the new tab immediately.
+Tell the user the new tab is ready. If running as a Telegram agent, present the dashboard as a Mini App button so the user can tap to see the new tab immediately:
 
-Example response: "Built your 'Restaurant Spending' tab. It shows [brief description of what the view contains]. Tap the dashboard button to see it."
+```bash
+node scripts/telegram-notify.js --dashboard "<chatId>" "Built your 'Restaurant Spending' tab. Tap to see it." "<tunnel-url>"
+```
+
+Use the `chatId` from the inbound Telegram message and the active cloudflared tunnel URL. Do NOT send the dashboard URL as a plain text link — it won't work without Mini App initData.
 
 ### Step 12: Rollback on failure
 

@@ -16,10 +16,15 @@ const path = require('path');
 const crypto = require('crypto');
 const Database = require('better-sqlite3');
 
+const { validateSlug } = require('../scripts/validate-slugs');
+
 const DB_PATH = path.join(__dirname, '..', 'data', 'foliome.db');
 const SYNC_OUTPUT_DIR = path.join(__dirname, '..', 'data', 'sync-output');
 const SEMANTICS_PATH = path.join(__dirname, '..', 'config', 'data-semantics.json');
 const bankFilter = process.argv.includes('--bank') ? process.argv[process.argv.indexOf('--bank') + 1] : null;
+
+// Deduplicate "no semantics" warnings (one per institution per run)
+const _semanticsWarned = new Set();
 
 // === Data Semantics ===
 
@@ -37,7 +42,13 @@ function loadSemantics() {
  * (debits negative, credits positive).
  */
 function normalizeAmountSign(amount, institution, raw, semantics) {
-  if (!semantics?.institutions?.[institution]) return amount;
+  if (!semantics?.institutions?.[institution]) {
+    if (!_semanticsWarned.has(institution)) {
+      _semanticsWarned.add(institution);
+      console.warn(`[import] WARNING: No data-semantics entry for "${institution}" — amounts imported as-is without sign normalization`);
+    }
+    return amount;
+  }
 
   const conv = semantics.institutions[institution].transactionConvention;
   if (!conv) return amount;
@@ -689,6 +700,16 @@ function main() {
     for (const file of files) {
       const institution = file.replace('.json', '');
       if (bankFilter && institution !== bankFilter) continue;
+
+      // Slug immutability check
+      const slugCheck = validateSlug(institution);
+      if (!slugCheck.ok) {
+        console.warn(`[import] Slug validation failed for "${institution}":`);
+        slugCheck.errors.forEach(e => console.warn(`  ${e}`));
+        console.log(`[import] Skipping ${institution} — slug mismatch`);
+        results.push({ institution, balancesImported: 0, txnsImported: 0, txnsSkipped: 0, holdingsImported: 0 });
+        continue;
+      }
 
       const data = JSON.parse(fs.readFileSync(path.join(SYNC_OUTPUT_DIR, file), 'utf-8'));
 

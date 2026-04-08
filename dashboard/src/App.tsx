@@ -125,7 +125,7 @@ function DashboardApp() {
       </div>
 
       {/* Tab Bar */}
-      <div className="flex border-b border-[var(--border)] mb-5 overflow-x-auto" style={{ scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}>
+      <div className="flex border-b border-[var(--border)] mb-5 overflow-x-auto overflow-y-hidden hide-scrollbar" style={{ WebkitOverflowScrolling: 'touch' }}>
         {TABS.map(tab => (
           <button
             key={tab.id}
