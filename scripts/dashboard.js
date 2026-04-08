@@ -217,7 +217,7 @@ ${isTelegram ? '<script src="https://telegram.org/js/telegram-web-app.js"><\/scr
 
   .kpi-row {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: 1fr;
     gap: 12px;
     margin-bottom: 20px;
   }
@@ -229,7 +229,7 @@ ${isTelegram ? '<script src="https://telegram.org/js/telegram-web-app.js"><\/scr
     text-align: center;
   }
   .kpi .label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
-  .kpi .value { font-size: 24px; font-weight: 700; margin-top: 4px; }
+  .kpi .value { font-size: 20px; font-weight: 700; margin-top: 4px; }
   .kpi .value.positive { color: var(--positive); }
   .kpi .value.negative { color: var(--negative); }
 
@@ -238,7 +238,12 @@ ${isTelegram ? '<script src="https://telegram.org/js/telegram-web-app.js"><\/scr
     gap: 0;
     margin-bottom: 16px;
     border-bottom: 2px solid var(--border);
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
   }
+  .tabs::-webkit-scrollbar { display: none; }
   .tab {
     padding: 8px 16px;
     cursor: pointer;
@@ -252,6 +257,8 @@ ${isTelegram ? '<script src="https://telegram.org/js/telegram-web-app.js"><\/scr
     border-top: none;
     border-left: none;
     border-right: none;
+    flex-shrink: 0;
+    white-space: nowrap;
   }
   .tab.active {
     color: var(--green-primary);
@@ -319,7 +326,7 @@ ${isTelegram ? '<script src="https://telegram.org/js/telegram-web-app.js"><\/scr
 
   .txn-row {
     display: grid;
-    grid-template-columns: 80px 1fr auto;
+    grid-template-columns: 65px 1fr auto;
     gap: 8px;
     padding: 8px 0;
     border-bottom: 1px solid var(--border);
@@ -363,15 +370,19 @@ ${isTelegram ? '<script src="https://telegram.org/js/telegram-web-app.js"><\/scr
   .sync-ok { color: var(--positive); }
   .sync-fail { color: var(--negative); }
 
-  @media (max-width: 600px) {
-    .kpi-row { grid-template-columns: 1fr; }
-    .kpi .value { font-size: 20px; }
-    body { padding: 12px; }
-    .txn-row { grid-template-columns: 65px 1fr auto; }
+  @media (min-width: 380px) {
+    .kpi-row { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (min-width: 600px) {
+    .kpi-row { grid-template-columns: repeat(3, 1fr); }
+    .kpi .value { font-size: 24px; }
+    .txn-row { grid-template-columns: 80px 1fr auto; }
   }
 </style>
 </head>
 <body>
+<div id="debug-width" style="position:fixed;top:0;right:0;background:red;color:white;padding:2px 8px;font-size:12px;z-index:9999"></div>
+<script>function updateW(){document.getElementById('debug-width').textContent=window.innerWidth+'x'+window.innerHeight}window.addEventListener('resize',updateW);updateW();</script>
 <div class="header">
   <div>
     <h1>Foliome</h1>

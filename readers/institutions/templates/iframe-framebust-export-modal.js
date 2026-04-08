@@ -76,29 +76,42 @@ module.exports = {
     trustDevicePatterns: ['Trust this device and skip this step in the future'],
   },
 
-  // Transaction History — Pattern A variant with shadow DOM navigation + export modal
+  // Transaction History — Pattern A (Central Dialog) with shadow DOM navigation
   // Shadow DOM: post-login navigation is inside web components (e.g., <responsive-meganav>).
   // The explorer can't annotate shadow DOM elements — discover selectors by:
   //   1. evaluate() to find shadow hosts: document.querySelector('responsive-meganav').shadowRoot.querySelectorAll('a')
   //   2. Or use page.locator('text=Transaction History') which pierces shadow DOM automatically
+  //
+  // NOTE: This template uses Pattern A (runCentralDialog). The export button on the
+  // Transaction History page opens a dialog/modal where you select account + format + dates,
+  // then click a submit button to download. Pattern A iterates accounts within that dialog.
+  // If the bank's export is a single-click download with no dialog, use Pattern E instead.
   transactions: {
-    // Shadow DOM navigation — use page.locator() text matching to pierce shadow roots
-    navigateToTransactions: async (page) => {
-      await page.locator('text=Transaction History').first().click({ timeout: 10000 });
-    },
-    // Account selector — dropdown with all accounts, stable ID pattern
+    // Entry point: button that opens the download dialog (or navigates to the download page).
+    // Pattern A clicks this to reveal account/format/date selectors.
+    // If the export page is reached via shadow DOM navigation, navigate there first
+    // (e.g., via a beforeTask hook or custom navigateToTransactions in a Pattern E config),
+    // then this selector targets the "Export" or "Download" button on that page.
+    downloadButtonSelector: '#history-header-utility-bar-export-button',
+
+    // Account selector — dropdown with all accounts
     accountDropdownButton: '#account-selector',
-    accountOptionPattern: '#account-selector-header-0-account-{N}',  // {N} = 0-indexed
-    // Date range — native <select> (use Playwright selectOption(), not click-based)
-    dateRangeSelector: '#date-range-select-id',
-    allTransactionsValue: 'All',           // value for selectOption() — full history
-    dateRangeValue: 'SpecifyDateRange',    // value for custom date range
-    // Search button — required after changing account or date range
-    searchButtonSelector: '#lbl_search-button',
-    // Export button opens a modal with format choice (CSV, JSON, XML)
-    exportButtonSelector: '#history-header-utility-bar-export-button',
-    // In the export modal, CSV is selected by default — just click Export
-    exportModalSubmitSelector: 'button:has-text("Export")',
+
+    // File format: export modal has format choices (CSV, JSON, XML).
+    // If CSV is selected by default, provide fileTypeDropdownButton: null or omit it.
+    // If a custom selection flow is needed (e.g., radio buttons), use selectFileFormat instead.
+    // fileTypeDropdownButton: '#format-selector',
+    // fileTypeLabel: 'CSV',
+
+    // Date range: use activityDropdownButton if the dialog has a dropdown (e.g., "All transactions"),
+    // or fromDateSelector/toDateSelector for direct date inputs,
+    // or fillDateInputs for readonly date inputs that need JS value setting.
+    // activityDropdownButton: '#activity-dropdown',
+    // allTransactionsLabel: 'All transactions',
+
+    // Submit button — clicks to trigger the CSV download after account/format/dates are set
+    downloadSubmitSelector: 'button:has-text("Export")',
+
     // CSV columns (brokerage): Date, Action, Symbol, Description, Quantity, Price, Fees & Comm, Amount
   },
 

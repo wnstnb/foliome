@@ -52,7 +52,7 @@ Real Estate (Playwright → Google/Zillow/Redfin scrape) → JSON Output (with p
 - **Accounts are matched by last-4 digits** — strongest identifier, survives display name changes. Aliases accumulate in `accounts.json` over time.
 - **Failed syncs never destroy good data** — error handling preserves previous successful sync output.
 
-For per-institution details (login types, MFA, download patterns, custom components), see `config/institutions-status.md`.
+For per-institution details (login types, MFA, download patterns, custom components), see `config/institutions-status.md` (generated during setup — not present until you add institutions).
 
 ## Telegram Agent Lifecycle
 
@@ -104,6 +104,7 @@ When the user messages via Telegram (via Claude Code channels), follow these rul
 
 **Skills the agent supports (12 total):**
 
+<!-- Dev-only skills (readiness-check, wrap-it-up) are excluded from the public repo by sync-public.sh -->
 | Category | Skill | Trigger |
 |----------|-------|---------|
 | Infrastructure | `/sync` | "sync", "update accounts", "refresh" |

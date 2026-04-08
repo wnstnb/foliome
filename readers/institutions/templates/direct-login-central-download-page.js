@@ -154,12 +154,47 @@ module.exports = {
 
   // Statement balances — Pattern S-A: PDF statements
   // Navigate to statements page via "View Statements" on account detail page.
-  // PDF download hooks would go here (beforeDownloads, download, afterDownloads).
+  // Each account type needs: source, beforeDownloads (optional setup), and download (required).
+  // download-statements.js skips any account type where .download is missing,
+  // so `source: 'pdf'` alone is not enough — you must provide a download function.
+  // Discover the statements page layout with the interactive explorer, then fill in
+  // the selectors below.
   statementBalances: {
     statementsNavSelector: 'button:has-text("View Statements")',
-    source: 'pdf',
-    checking: { source: 'pdf' },
-    savings: { source: 'pdf' },
+    checking: {
+      source: 'pdf',
+      openingBalancePattern: 'Previous Balance',   // Text label before opening balance in PDF
+      closingBalancePattern: 'New Balance',         // Text label before closing balance in PDF
+      beforeDownloads: async (page, accountId) => {
+        // TODO: Navigate to the correct account's statements (e.g., select from dropdown)
+        // const last4 = accountId.split('-').pop();
+        // await page.locator(`text=${last4}`).click();
+        // await page.waitForTimeout(2000);
+      },
+      download: async (page, accountId, rowIdx) => {
+        // TODO: Click the PDF download button for the given row index
+        // const pdfLinks = page.locator('a[href$=".pdf"]');
+        // const [dl] = await Promise.all([
+        //   page.waitForEvent('download', { timeout: 15000 }),
+        //   pdfLinks.nth(rowIdx).click({ timeout: 5000 }),
+        // ]);
+        // return dl;
+        throw new Error('Statement download not yet configured — fill in selectors from explorer');
+      },
+    },
+    savings: {
+      source: 'pdf',
+      openingBalancePattern: 'Previous Balance',
+      closingBalancePattern: 'New Balance',
+      beforeDownloads: async (page, accountId) => {
+        // TODO: Same as checking — navigate to this account's statements
+        throw new Error('Statement download not yet configured — fill in selectors from explorer');
+      },
+      download: async (page, accountId, rowIdx) => {
+        // TODO: Same as checking — click PDF download for row
+        throw new Error('Statement download not yet configured — fill in selectors from explorer');
+      },
+    },
   },
 
   // Populated by /learn-institution — matched by last-4 digits
