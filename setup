@@ -1,0 +1,528 @@
+#!/usr/bin/env bash
+# Foliome setup — check prerequisites, install dependencies, prepare runtime.
+# Idempotent: safe to run on first install and after git pull.
+#
+# Usage:
+#   ./setup              # full interactive setup
+#   ./setup --skip-model # skip classifier download (~256MB)
+#   ./setup --yes        # auto-accept all install prompts (CI/scripting)
+set -e
+
+# Catch unexpected failures from set -e and print context
+trap 'echo ""; echo -e "  ${RED:-}✗ Setup failed unexpectedly at line $LINENO.${RESET:-}"; echo "  Re-run with: bash -x ./setup  (for debug output)"; echo ""' ERR
+
+FOLIOME_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$FOLIOME_DIR"
+
+# Detect platform
+OS_NAME="$(uname -s)"
+case "$OS_NAME" in
+  MINGW*|MSYS*|CYGWIN*)
+    IS_WINDOWS=1 ;;
+  *)
+    IS_WINDOWS=0 ;;
+esac
+
+SKIP_MODEL=0
+AUTO_YES=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --skip-model) SKIP_MODEL=1; shift ;;
+    --yes|-y) AUTO_YES=1; shift ;;
+    *) shift ;;
+  esac
+done
+
+# === Helpers ===
+
+# Colors (disabled if not a terminal)
+if [ -t 1 ]; then
+  GREEN='\033[0;32m'; YELLOW='\033[0;33m'; RED='\033[0;31m'
+  BOLD='\033[1m'; DIM='\033[2m'; RESET='\033[0m'
+else
+  GREEN=''; YELLOW=''; RED=''; BOLD=''; DIM=''; RESET=''
+fi
+
+ok()   { echo -e "  ${GREEN}✓${RESET} $1"; }
+warn() { echo -e "  ${YELLOW}⚠${RESET} $1"; }
+fail() { echo -e "  ${RED}✗${RESET} $1"; }
+info() { echo -e "  ${DIM}→${RESET} $1"; }
+
+# Prompt user y/n. Auto-accepts if --yes flag set.
+ask() {
+  if [ "$AUTO_YES" -eq 1 ]; then return 0; fi
+  echo -ne "  $1 [y/N] "
+  read -r answer
+  case "$answer" in
+    [yY]|[yY][eE][sS]) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+ACTIONS_NEEDED=()   # things the user must do manually after setup
+OPTIONAL_MISSING=() # optional deps not installed
+
+echo ""
+echo "  ╔═══════════════════════════════════════╗"
+echo "  ║  Foliome — Skill Stack for Personal   ║"
+echo "  ║  Finance                              ║"
+echo "  ╚═══════════════════════════════════════╝"
+echo ""
+echo -e "  ${BOLD}Phase 1: Core prerequisites${RESET}"
+echo ""
+
+# ═══════════════════════════════════════════════════════════════════
+# PHASE 1: REQUIRED — Core
+# ═══════════════════════════════════════════════════════════════════
+
+# -- 1a. git (needed for updates) --
+if command -v git >/dev/null 2>&1; then
+  ok "git $(git --version | cut -d' ' -f3)"
+else
+  warn "git not found — you won't be able to pull updates"
+  info "Install: https://git-scm.com/downloads"
+fi
+
+# -- 1b. Node.js 18+ --
+if command -v node >/dev/null 2>&1; then
+  NODE_VERSION=$(node -v | tr -d 'v' | cut -d. -f1)
+  if [ "$NODE_VERSION" -lt 18 ]; then
+    fail "Node.js 18+ required (found $(node -v))"
+    if command -v nvm >/dev/null 2>&1; then
+      if ask "Install Node.js 20 LTS via nvm?"; then
+        nvm install 20
+        nvm use 20
+        ok "Node.js $(node -v) installed via nvm"
+      else
+        fail "Node.js 18+ is required. Cannot continue."
+        exit 1
+      fi
+    else
+      fail "Node.js 18+ is required. Cannot continue."
+      info "Install nvm: curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash"
+      info "Then: nvm install 20"
+      info "Or download directly: https://nodejs.org/"
+      exit 1
+    fi
+  else
+    ok "Node.js $(node -v)"
+  fi
+else
+  # Node not found — try to install via nvm or fnm
+  INSTALLED_NODE=0
+
+  # Try nvm (macOS/Linux)
+  if [ "$IS_WINDOWS" -eq 0 ]; then
+    if command -v nvm >/dev/null 2>&1; then
+      if ask "Node.js not found. Install Node.js 20 LTS via nvm?"; then
+        nvm install 20
+        nvm use 20
+        INSTALLED_NODE=1
+      fi
+    elif [ -s "$HOME/.nvm/nvm.sh" ]; then
+      # nvm installed but not sourced
+      . "$HOME/.nvm/nvm.sh"
+      if ask "Node.js not found. Install Node.js 20 LTS via nvm?"; then
+        nvm install 20
+        nvm use 20
+        INSTALLED_NODE=1
+      fi
+    elif command -v fnm >/dev/null 2>&1; then
+      if ask "Node.js not found. Install Node.js 20 LTS via fnm?"; then
+        fnm install 20
+        fnm use 20
+        eval "$(fnm env)"
+        INSTALLED_NODE=1
+      fi
+    fi
+  else
+    # Windows — check for nvm-windows or fnm
+    if command -v nvm >/dev/null 2>&1; then
+      if ask "Node.js not found. Install Node.js 20 LTS via nvm?"; then
+        nvm install 20
+        nvm use 20
+        INSTALLED_NODE=1
+      fi
+    elif command -v fnm >/dev/null 2>&1; then
+      if ask "Node.js not found. Install Node.js 20 LTS via fnm?"; then
+        fnm install 20
+        fnm use 20
+        eval "$(fnm env)"
+        INSTALLED_NODE=1
+      fi
+    fi
+  fi
+
+  if [ "$INSTALLED_NODE" -eq 0 ]; then
+    fail "Node.js is required but not installed."
+    echo ""
+    if [ "$IS_WINDOWS" -eq 1 ]; then
+      info "Option 1 — Install nvm-windows:"
+      info "  https://github.com/coreybutler/nvm-windows/releases"
+      info "  Then: nvm install 20 && nvm use 20"
+      echo ""
+      info "Option 2 — Install fnm (fast node manager):"
+      info "  winget install Schniz.fnm"
+      info "  Then: fnm install 20"
+    else
+      info "Option 1 — Install nvm (recommended):"
+      info "  curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash"
+      info "  source ~/.bashrc  (or ~/.zshrc)"
+      info "  nvm install 20"
+    fi
+    echo ""
+    info "Or download directly: https://nodejs.org/"
+    echo ""
+    info "Then re-run: ./setup"
+    exit 1
+  fi
+  ok "Node.js $(node -v) installed"
+fi
+
+# -- 1b. npm packages --
+if [ ! -d "node_modules" ] || [ "package.json" -nt "node_modules/.package-lock.json" ]; then
+  info "Installing npm dependencies..."
+  npm install --no-fund --no-audit
+  ok "npm dependencies installed"
+else
+  ok "npm dependencies up to date"
+fi
+
+# Verify native modules compiled correctly (better-sqlite3)
+if node -e "require('better-sqlite3')" 2>/dev/null; then
+  ok "better-sqlite3 native module loaded"
+else
+  fail "better-sqlite3 failed to load (native build error)"
+  OS_NAME="$(uname -s)"
+  if [ "$OS_NAME" = "Linux" ]; then
+    info "Install build tools: sudo apt install build-essential python3"
+  elif [ "$OS_NAME" = "Darwin" ]; then
+    info "Install build tools: xcode-select --install"
+  fi
+  info "Then re-run: npm rebuild better-sqlite3"
+  exit 1
+fi
+
+# -- 1c. dotenvx (credential encryption at rest) --
+if node -e "require('@dotenvx/dotenvx')" 2>/dev/null; then
+  ok "dotenvx installed (credential encryption)"
+else
+  fail "dotenvx not installed — credentials cannot be encrypted at rest"
+  info "Run: npm install @dotenvx/dotenvx --save"
+  exit 1
+fi
+
+# -- 1d. Playwright Chromium --
+# The --dry-run flag always exits 0, so we test whether the binary actually exists
+if node -e "const p = require('playwright'); const fs = require('fs'); if (!fs.existsSync(p.chromium.executablePath())) process.exit(1);" 2>/dev/null; then
+  ok "Playwright Chromium installed"
+else
+  info "Installing Playwright Chromium (~200MB)..."
+  npx playwright install chromium
+  # On Linux, Chromium needs system libraries (libnss3, libatk-bridge, etc.)
+  if [ "$OS_NAME" = "Linux" ]; then
+    info "Installing Playwright system dependencies (may require sudo)..."
+    npx playwright install-deps chromium 2>/dev/null || {
+      warn "Could not install Playwright system deps automatically"
+      info "If Chromium fails to launch, run: sudo npx playwright install-deps chromium"
+    }
+  fi
+  ok "Playwright Chromium installed"
+fi
+
+# ═══════════════════════════════════════════════════════════════════
+# PHASE 2: REQUIRED for PDF institutions (Pattern C)
+# ═══════════════════════════════════════════════════════════════════
+echo ""
+echo -e "  ${BOLD}Phase 2: PDF institution support${RESET}"
+echo ""
+
+# -- 2a. LiteParse CLI --
+if command -v lit >/dev/null 2>&1; then
+  ok "LiteParse CLI available"
+else
+  warn "LiteParse CLI (lit) not found"
+  info "Required for PDF statement parsing (Pattern C: PayPal, US Bank, etc.)"
+  info "Download: https://github.com/nicholasgasior/lit/releases"
+  info "Place the 'lit' binary on your PATH (e.g. /usr/local/bin/lit)"
+  ACTIONS_NEEDED+=("Install LiteParse CLI for PDF bank support: https://github.com/nicholasgasior/lit/releases")
+fi
+
+# -- 2b. unzip --
+if command -v unzip >/dev/null 2>&1; then
+  ok "unzip available"
+elif [ "$IS_WINDOWS" -eq 1 ]; then
+  # Windows uses PowerShell Expand-Archive as fallback (handled in download-transactions.js)
+  ok "PowerShell available (used for ZIP extraction on Windows)"
+elif [ "$OS_NAME" = "Darwin" ]; then
+  warn "unzip not found (unexpected on macOS)"
+  ACTIONS_NEEDED+=("Install unzip (should be pre-installed on macOS)")
+else
+  warn "unzip not found"
+  info "Required for extracting ZIP archives of PDF statements"
+  if command -v apt >/dev/null 2>&1; then
+    if ask "Install unzip via apt?"; then
+      sudo apt install -y unzip
+      ok "unzip installed"
+    else
+      ACTIONS_NEEDED+=("Install unzip: sudo apt install unzip")
+    fi
+  elif command -v dnf >/dev/null 2>&1; then
+    if ask "Install unzip via dnf?"; then
+      sudo dnf install -y unzip
+      ok "unzip installed"
+    else
+      ACTIONS_NEEDED+=("Install unzip: sudo dnf install unzip")
+    fi
+  elif command -v pacman >/dev/null 2>&1; then
+    ACTIONS_NEEDED+=("Install unzip: sudo pacman -S unzip")
+  else
+    ACTIONS_NEEDED+=("Install unzip via your system package manager")
+  fi
+fi
+
+# ═══════════════════════════════════════════════════════════════════
+# PHASE 3: OPTIONAL — Telegram / Agent Runtime
+# ═══════════════════════════════════════════════════════════════════
+echo ""
+echo -e "  ${BOLD}Phase 3: Agent runtime & Telegram (optional)${RESET}"
+echo ""
+
+# -- 3a. Claude Code CLI --
+if command -v claude >/dev/null 2>&1; then
+  ok "Claude Code CLI installed"
+else
+  warn "Claude Code CLI not found"
+  info "Claude Code is the agent runtime — all 10 skills run through it."
+  info "Install: npm install -g @anthropic-ai/claude-code"
+  info "Or download: https://claude.ai/download"
+  info "After install, run 'claude' once to authenticate."
+  OPTIONAL_MISSING+=("Claude Code CLI: npm install -g @anthropic-ai/claude-code")
+fi
+
+# -- 3b. Bun (Telegram plugin runtime) --
+if command -v bun >/dev/null 2>&1; then
+  ok "Bun $(bun --version) (Telegram plugin runtime)"
+else
+  warn "Bun not found"
+  info "Required for Telegram integration (Claude Code channels plugin)."
+  if [ "$IS_WINDOWS" -eq 1 ]; then
+    if ask "Install Bun via npm?"; then
+      npm install -g bun
+      ok "Bun installed"
+    else
+      OPTIONAL_MISSING+=("Bun (for Telegram): npm install -g bun  OR  https://bun.sh/")
+    fi
+  else
+    if ask "Install Bun?"; then
+      curl -fsSL https://bun.sh/install | bash
+      # Source bun into current session
+      if [ -f "$HOME/.bun/bin/bun" ]; then
+        export BUN_INSTALL="$HOME/.bun"
+        export PATH="$BUN_INSTALL/bin:$PATH"
+        ok "Bun $(bun --version) installed"
+      else
+        warn "Bun installed but may need a shell restart to take effect"
+        info "Run: source ~/.bashrc  (or ~/.zshrc)"
+      fi
+    else
+      OPTIONAL_MISSING+=("Bun (for Telegram): curl -fsSL https://bun.sh/install | bash")
+    fi
+  fi
+fi
+
+# -- 3c. Claude Code Telegram plugin (only if both claude and bun exist) --
+if command -v claude >/dev/null 2>&1 && command -v bun >/dev/null 2>&1; then
+  if claude plugins list 2>/dev/null | grep -q telegram; then
+    ok "Claude Code Telegram plugin installed"
+  else
+    info "Telegram plugin not installed."
+    info "To install: claude plugins install telegram@claude-plugins-official"
+    info "Then configure: /telegram:configure <bot-token>"
+    OPTIONAL_MISSING+=("Telegram plugin: claude plugins install telegram@claude-plugins-official")
+  fi
+fi
+
+# ═══════════════════════════════════════════════════════════════════
+# PHASE 4: Runtime setup
+# ═══════════════════════════════════════════════════════════════════
+echo ""
+echo -e "  ${BOLD}Phase 4: Runtime setup${RESET}"
+echo ""
+
+# -- 4a. Create data directories --
+DIRS=(
+  "data/sync-output"
+  "data/chrome-profile"
+  "data/downloads"
+  "data/mfa-pending"
+  "data/adaptive-pending"
+  "data/explore"
+  "data/exports"
+  "data/brief"
+  "data/wiki/goals"
+  "data/wiki/preferences"
+  "data/wiki/concerns"
+  "data/wiki/context"
+  "data/wiki/patterns"
+  "data/wiki/reflections"
+  "data/models"
+  "data/training"
+)
+
+CREATED=0
+for dir in "${DIRS[@]}"; do
+  if [ ! -d "$dir" ]; then
+    mkdir -p "$dir"
+    CREATED=$((CREATED + 1))
+  fi
+done
+if [ "$CREATED" -gt 0 ]; then
+  ok "Created $CREATED data directories"
+else
+  ok "Data directories exist"
+fi
+
+# -- 4b. Initialize config from templates --
+if [ -d "config-templates" ]; then
+  mkdir -p config
+  CONFIGS=0
+  for tpl in config-templates/*; do
+    dest="config/$(basename "$tpl")"
+    if [ ! -f "$dest" ]; then
+      cp "$tpl" "$dest"
+      CONFIGS=$((CONFIGS + 1))
+    fi
+  done
+  if [ "$CONFIGS" -gt 0 ]; then
+    ok "Created $CONFIGS config files from templates"
+  else
+    ok "Config files exist"
+  fi
+fi
+
+# -- 4c. .env file --
+if [ -f ".env" ]; then
+  ok ".env file exists"
+else
+  if [ -f ".env.template" ]; then
+    cp .env.template .env
+    ok "Created .env from template"
+    ACTIONS_NEEDED+=("Edit .env — add your Telegram bot token and bank credentials")
+  else
+    warn "No .env or .env.template found"
+    ACTIONS_NEEDED+=("Create .env with your credentials (see README)")
+  fi
+fi
+
+# -- 4d. Download transaction classifier model --
+# Local model lives in data/models/; HF cache lives in ~/.cache/huggingface/
+MODEL_DIR="data/models/foliome-classifier-v2-onnx/onnx"
+HF_CACHE_DIR="$HOME/.cache/huggingface"
+if [ "$SKIP_MODEL" -eq 1 ]; then
+  info "Skipping model download (--skip-model)"
+elif [ -f "$MODEL_DIR/model_quantized.onnx" ] || [ -f "$MODEL_DIR/model.onnx" ]; then
+  ok "Transaction classifier model present (local)"
+elif [ -d "$HF_CACHE_DIR" ] && find "$HF_CACHE_DIR" -name "model.onnx" -path "*distilbert*transaction*" 2>/dev/null | grep -q .; then
+  ok "Transaction classifier model present (HuggingFace cache)"
+else
+  info "Downloading transaction classifier from HuggingFace (~256MB)..."
+  info "Model: DoDataThings/distilbert-us-transaction-classifier-v2"
+  if node -e "
+    const { pipeline } = require('@xenova/transformers');
+    pipeline('text-classification', 'DoDataThings/distilbert-us-transaction-classifier-v2')
+      .then(() => { console.log('  ✓ Transaction classifier downloaded'); process.exit(0); })
+      .catch(e => { console.error('  Download failed: ' + e.message); process.exit(1); });
+  " 2>&1; then
+    : # success message printed by node
+  else
+    warn "Model download failed — will retry automatically on first classification run"
+  fi
+fi
+
+# -- 4e. Initialize SQLite database --
+if [ -f "data/foliome.db" ]; then
+  ok "SQLite database exists"
+else
+  info "Initializing SQLite database..."
+  node sync-engine/import.js --init
+  ok "SQLite database initialized"
+fi
+
+# ═══════════════════════════════════════════════════════════════════
+# PHASE 5: Dashboard
+# ═══════════════════════════════════════════════════════════════════
+echo ""
+echo -e "  ${BOLD}Phase 5: Dashboard${RESET}"
+echo ""
+
+if [ -d "dashboard" ]; then
+  # Install dashboard dependencies if needed
+  if [ ! -d "dashboard/node_modules" ] || [ "dashboard/package.json" -nt "dashboard/node_modules/.package-lock.json" ]; then
+    info "Installing dashboard dependencies..."
+    (cd dashboard && npm install --no-fund --no-audit 2>&1 | tail -1)
+    ok "Dashboard dependencies installed"
+  else
+    ok "Dashboard dependencies up to date"
+  fi
+
+  # Build the SPA
+  if [ -f "dashboard/dist/index.html" ]; then
+    ok "Dashboard built"
+  else
+    info "Building dashboard..."
+    if (cd dashboard && npm run build 2>&1 | tail -3); then
+      ok "Dashboard built"
+    else
+      warn "Dashboard build failed — server will fall back to legacy HTML"
+      info "To retry: cd dashboard && npm run build"
+    fi
+  fi
+else
+  warn "Dashboard directory not found"
+  info "The dashboard is the main UI. If you cloned a minimal install, pull the full repo."
+fi
+
+# ═══════════════════════════════════════════════════════════════════
+# SUMMARY
+# ═══════════════════════════════════════════════════════════════════
+echo ""
+
+# Action required items
+if [ ${#ACTIONS_NEEDED[@]} -gt 0 ]; then
+  echo -e "  ${BOLD}Action required:${RESET}"
+  for i in "${!ACTIONS_NEEDED[@]}"; do
+    echo -e "  ${RED}→${RESET} ${ACTIONS_NEEDED[$i]}"
+  done
+  echo ""
+fi
+
+# Optional items not installed
+if [ ${#OPTIONAL_MISSING[@]} -gt 0 ]; then
+  echo -e "  ${BOLD}Optional (not installed):${RESET}"
+  for i in "${!OPTIONAL_MISSING[@]}"; do
+    echo -e "  ${DIM}→${RESET} ${OPTIONAL_MISSING[$i]}"
+  done
+  echo ""
+fi
+
+echo -e "  ${GREEN}${BOLD}Setup complete!${RESET}"
+echo ""
+echo "  Next steps:"
+if [ ! -f ".env" ] || grep -q '^TELEGRAM_BOT_TOKEN=$' .env 2>/dev/null; then
+  echo "    1. Edit .env — add your credentials"
+  echo "    2. Start Claude Code: claude"
+  echo "    3. Add your first bank: /learn-institution"
+  echo "    4. Sync all accounts: /sync"
+else
+  echo "    1. Start Claude Code: claude"
+  echo "    2. Add your first bank: /learn-institution"
+  echo "    3. Sync all accounts: /sync"
+  echo "    4. Ask questions: /morning-brief, /brief-me"
+fi
+echo ""
+echo "  12 skills available:"
+echo "    /sync /learn-institution /getting-started /morning-brief"
+echo "    /spending-alerts /payment-reminders /brief-me"
+echo "    /custom-view /category-override /readiness-check /reflect /wrap-it-up"
+echo ""

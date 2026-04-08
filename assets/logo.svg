@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 600" fill="none">
+  <rect x="1" y="1" width="510" height="598" rx="12" fill="#0F1B2D" stroke="#1A3A4A" stroke-width="1.5"/>
+  <defs>
+    <linearGradient id="leaf-grad" x1="20%" y1="0%" x2="80%" y2="100%">
+      <stop offset="0%" stop-color="#34D399"/>
+      <stop offset="40%" stop-color="#0D9488"/>
+      <stop offset="100%" stop-color="#065F46"/>
+    </linearGradient>
+    <radialGradient id="highlight" cx="35%" cy="30%" r="50%">
+      <stop offset="0%" stop-color="#6EE7B7" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#065F46" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="shadow" cx="70%" cy="75%" r="50%">
+      <stop offset="0%" stop-color="#022C22" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#065F46" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Leaf base -->
+  <path id="leaf" d="
+    M256 24
+    C264 36 276 56 296 88
+    C332 144 396 220 424 296
+    C444 348 440 400 416 436
+    C388 480 332 504 280 508
+    C264 509 252 506 244 500
+    C196 480 144 440 112 392
+    C80 340 76 280 96 224
+    C124 148 184 80 224 48
+    C240 34 250 26 256 24Z"
+    fill="url(#leaf-grad)"/>
+
+  <!-- 3D highlight -->
+  <use href="#leaf" fill="url(#highlight)"/>
+  <!-- 3D shadow -->
+  <use href="#leaf" fill="url(#shadow)"/>
+
+  <!-- Clip bar chart to leaf shape -->
+  <clipPath id="leaf-clip">
+    <use href="#leaf"/>
+  </clipPath>
+
+  <!-- Central midrib — curves left, starts at leaf tip -->
+  <path d="M256 24 C240 100 220 200 228 320 C236 400 244 460 248 504"
+        stroke="#022C22" stroke-width="4" stroke-linecap="round" fill="none" opacity="0.25"/>
+  <path d="M257.5 24 C241.5 100 221.5 200 229.5 320 C237.5 400 245.5 460 249.5 504"
+        stroke="#6EE7B7" stroke-width="1.5" stroke-linecap="round" fill="none" opacity="0.2"/>
+
+  <!-- Bar chart — vertical bars growing from midrib, clipped to leaf -->
+  <g clip-path="url(#leaf-clip)" opacity="0.55">
+    <!-- Bars grow horizontally from the midrib (center line ~248) -->
+    <!-- Each bar: y position along the leaf, width = bar value, centered on midrib -->
+
+    <!-- Bar 1 (short) — near top -->
+    <rect x="200" y="148" width="96" height="20" rx="3" fill="#6EE7B7" opacity="0.4"/>
+
+    <!-- Bar 2 (medium-short) -->
+    <rect x="184" y="188" width="128" height="20" rx="3" fill="#6EE7B7" opacity="0.45"/>
+
+    <!-- Bar 3 (tall) -->
+    <rect x="156" y="228" width="184" height="20" rx="3" fill="#6EE7B7" opacity="0.5"/>
+
+    <!-- Bar 4 (medium) -->
+    <rect x="172" y="268" width="152" height="20" rx="3" fill="#6EE7B7" opacity="0.5"/>
+
+    <!-- Bar 5 (tallest) -->
+    <rect x="144" y="308" width="208" height="20" rx="3" fill="#6EE7B7" opacity="0.55"/>
+
+    <!-- Bar 6 (medium-tall) -->
+    <rect x="160" y="348" width="176" height="20" rx="3" fill="#6EE7B7" opacity="0.5"/>
+
+    <!-- Bar 7 (short) — near bottom -->
+    <rect x="192" y="388" width="112" height="20" rx="3" fill="#6EE7B7" opacity="0.4"/>
+  </g>
+
+  <!-- Stem — 3D layered -->
+  <path d="M248 504 Q240 536 224 564 Q216 578 204 588"
+        stroke="#065F46" stroke-width="7" stroke-linecap="round" fill="none"/>
+  <path d="M249 504 Q241 536 225 564 Q217 578 205 588"
+        stroke="#0D9488" stroke-width="2.5" stroke-linecap="round" fill="none" opacity="0.5"/>
+  <path d="M250.5 504 Q242.5 536 226.5 564 Q218.5 578 206.5 588"
+        stroke="#34D399" stroke-width="1" stroke-linecap="round" fill="none" opacity="0.3"/>
+</svg>

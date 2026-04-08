@@ -1,0 +1,149 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--bg);
+  --color-foreground: var(--text);
+  --color-card: var(--bg-card);
+  --color-card-foreground: var(--text);
+  --color-popover: var(--bg-card);
+  --color-popover-foreground: var(--text);
+  --color-primary: var(--brand);
+  --color-primary-foreground: #ffffff;
+  --color-secondary: var(--bg-hover);
+  --color-secondary-foreground: var(--text);
+  --color-muted: var(--bg-hover);
+  --color-muted-foreground: var(--text-muted);
+  --color-accent: var(--bg-hover);
+  --color-accent-foreground: var(--text);
+  --color-destructive: var(--negative);
+  --color-destructive-foreground: #ffffff;
+  --color-border: var(--border);
+  --color-input: var(--border);
+  --color-ring: var(--brand);
+  --color-chart-1: #0D9488;
+  --color-chart-2: #3B82F6;
+  --color-chart-3: #8B5CF6;
+  --color-chart-4: #F59E0B;
+  --color-chart-5: #EC4899;
+  --color-chart-6: #06B6D4;
+  --color-chart-7: #EF4444;
+  --radius: 0.75rem;
+
+  --color-positive: var(--positive);
+  --color-negative: var(--negative);
+  --color-warning: var(--warning);
+  --color-brand: var(--brand);
+  --color-brand-light: var(--brand-light);
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-heading: var(--font-sans);
+  --color-sidebar-ring: var(--border);
+  --color-sidebar-border: var(--border);
+  --color-sidebar-accent-foreground: var(--text);
+  --color-sidebar-accent: var(--bg-hover);
+  --color-sidebar-primary-foreground: #ffffff;
+  --color-sidebar-primary: var(--brand);
+  --color-sidebar-foreground: var(--text);
+  --color-sidebar: var(--bg-card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/* ─── Foliome Light Theme ─── */
+:root {
+  --bg: #FAFCFB;
+  --bg-card: #FFFFFF;
+  --bg-hover: #F0FDF9;
+  --text: #1A1A2E;
+  --text-muted: #6B7280;
+  --border: #E5E7EB;
+  --positive: #059669;
+  --negative: #DC2626;
+  --warning: #D97706;
+  --brand: #0D9488;
+  --brand-light: #34D399;
+  --brand-accent: #6EE7B7;
+}
+
+/* ─── Foliome Dark Theme ─── */
+.dark {
+  --bg: #0F1B2D;
+  --bg-card: #162236;
+  --bg-hover: #1A3A4A;
+  --text: #ECFDF5;
+  --text-muted: #94A3B8;
+  --border: #1E3A4F;
+  --positive: #34D399;
+  --negative: #F87171;
+  --warning: #FBBF24;
+}
+
+/* ─── Telegram Theme (Telegram controls colors) ─── */
+.tg-theme {
+  --bg: var(--tg-theme-bg-color, #0F1B2D);
+  --bg-card: var(--tg-theme-secondary-bg-color, #162236);
+  --bg-hover: var(--tg-theme-secondary-bg-color, #1A3A4A);
+  --text: var(--tg-theme-text-color, #ECFDF5);
+  --text-muted: var(--tg-theme-hint-color, #94A3B8);
+  --border: rgba(255, 255, 255, 0.08);
+}
+
+/* ─── Typography Scale ─── */
+.t-hero { font-size: 32px; font-weight: 700; line-height: 1.1; letter-spacing: -0.5px; }
+.t-value { font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.t-body { font-size: 14px; font-weight: 400; }
+.t-caption { font-size: 12px; font-weight: 500; }
+.t-micro { font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; }
+
+/* ─── Animations ─── */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes slideLeft {
+  from { opacity: 0; transform: translateX(8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes slideRight {
+  from { opacity: 0; transform: translateX(-8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in { animation: fadeIn 0.2s ease; }
+.animate-slide-left { animation: slideLeft 0.25s ease; }
+.animate-slide-right { animation: slideRight 0.25s ease; }
+.animate-slide-up { animation: slideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+
+/* ─── Progress Bars ─── */
+.prog-track {
+  height: 6px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--border) 50%, transparent);
+  overflow: hidden;
+}
+.prog-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.6s ease;
+}
+
+/* ─── Safe Area ─── */
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom, 80px); }
+
+@layer base {
+  * { @apply border-border outline-ring/50; }
+  body { @apply bg-background text-foreground; }
+  html { @apply font-sans; }
+}

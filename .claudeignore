@@ -1,0 +1,4 @@
+# Prevent Claude Code from directly reading credential files
+.env
+.env.*
+!.env.template

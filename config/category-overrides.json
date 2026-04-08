@@ -1,0 +1,58 @@
+{
+  "default_categories": [
+    "Restaurants",
+    "Groceries",
+    "Shopping",
+    "Transportation",
+    "Entertainment",
+    "Utilities",
+    "Subscription",
+    "Healthcare",
+    "Insurance",
+    "Housing",
+    "Travel",
+    "Education",
+    "Personal Care",
+    "Transfer",
+    "Income",
+    "Fees"
+  ],
+  "investment_categories": [
+    "Buy",
+    "Sell",
+    "Dividend",
+    "Interest",
+    "Contribution",
+    "Withdrawal",
+    "Fee",
+    "Rebalance",
+    "Distribution",
+    "Rollover"
+  ],
+  "merchant_rules": {
+    "STARBUCKS": "Restaurants",
+    "MCDONALD": "Restaurants",
+    "DOORDASH": "Restaurants",
+    "UBER EATS": "Restaurants",
+
+    "WALMART": "Shopping",
+    "TARGET ": "Shopping",
+    "AMAZON": "Shopping",
+
+    "NETFLIX": "Subscription",
+    "SPOTIFY": "Subscription",
+    "YOUTUBE": "Subscription",
+
+    "SHELL": "Transportation",
+    "CHEVRON": "Transportation"
+  },
+  "investment_type_rules": {
+    "TRADE": "Buy",
+    "DIVIDEND_OR_INTEREST": "Dividend",
+    "ACH_RECEIPT": "Contribution",
+    "ACH_DISBURSEMENT": "Withdrawal",
+    "AIP Contribution": "Contribution",
+    "Exchange Purchase": "Rebalance",
+    "Exchange Redemption": "Rebalance"
+  }
+}
