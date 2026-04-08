@@ -32,6 +32,7 @@
   --color-chart-6: #06B6D4;
   --color-chart-7: #EF4444;
   --radius: 0.75rem;
+  --breakpoint-md: 500px;
 
   --color-positive: var(--positive);
   --color-negative: var(--negative);

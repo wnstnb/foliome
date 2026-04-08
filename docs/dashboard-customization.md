@@ -358,8 +358,8 @@ Import from `@/lib/format`:
 
 ## Telegram-Specific
 
-- Theme: `.tg-theme` class applies Telegram's CSS variables as fallbacks
-- Theme toggle is hidden in Telegram (Telegram controls light/dark)
+- Theme: `.tg-theme` class applies Telegram's CSS variables as initial defaults; removed when user manually toggles
+- Theme toggle is visible in Telegram — user can override Telegram's theme with Foliome light/dark
 - `haptic('light')` fires on tab switches and taps
 - `Telegram.WebApp.BackButton` used for overlay back navigation
 - Safe area: `.safe-bottom` class adds `padding-bottom: env(safe-area-inset-bottom, 80px)`

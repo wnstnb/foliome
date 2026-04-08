@@ -28,10 +28,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     return 'light';
   });
 
+  // Track whether user has manually toggled — disables Telegram theme override
+  const [userOverride, setUserOverride] = useState(false);
+
   const toggleTheme = useCallback(() => {
-    if (isTg) return; // Telegram controls theme
+    setUserOverride(true);
     setTheme(t => t === 'dark' ? 'light' : 'dark');
-  }, [isTg]);
+  }, []);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -40,10 +43,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     } else {
       root.classList.remove('dark');
     }
-    if (isTg) {
+    // Only apply tg-theme if user hasn't manually toggled
+    if (isTg && !userOverride) {
       root.classList.add('tg-theme');
+    } else {
+      root.classList.remove('tg-theme');
     }
-  }, [theme, isTg]);
+  }, [theme, isTg, userOverride]);
 
   return (
     <ThemeContext.Provider value={{ theme, toggleTheme, isTg }}>

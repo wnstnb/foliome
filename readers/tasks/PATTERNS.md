@@ -39,7 +39,10 @@ transactions: {
   downloadButtonSelector,      // entry point button
   accountDropdownButton,       // account selector trigger
   fileTypeDropdownButton,      // file format selector (dropdown)
+  fileTypeLabel,               // string — label to select in file type dropdown (default: 'Spreadsheet (Excel, CSV)')
   activityDropdownButton,      // activity/date range selector
+  allTransactionsLabel,        // string — label for "all transactions" option in activity dropdown (default: 'All transactions')
+  dateRangeLabel,              // string — label for "date range" option in activity dropdown (default: 'Choose a date range')
   fromDateSelector,            // date input (from)
   toDateSelector,              // date input (to)
   downloadSubmitSelector,      // submit button
@@ -95,9 +98,11 @@ Navigate to each account's detail page individually, then download from there. N
 transactions: {
   perAccount: true,
   downloadLinkSelector,        // download button on account page
-  timePeriodOptions,           // time period dropdown options
+  timePeriodOptions,           // object — time period dropdown options: { all: 'Year-to-Date', custom: 'Custom Date Range' }
+  fromDateSelector,            // string — date input selector (from), used when timePeriodOptions.custom is selected
+  toDateSelector,              // string — date input selector (to), used when timePeriodOptions.custom is selected
   downloadSubmitSelector,      // confirm download
-  postDownloadDismiss,         // close "download started" modal
+  postDownloadDismiss,         // string[] — selectors to dismiss "download started" modal (default: close/× buttons)
   backButtonSelector,          // return to dashboard
 }
 ```
@@ -145,9 +150,11 @@ Download monthly PDF statements, extract text with LiteParse, then agent extract
 ```js
 transactions: {
   pdfBased: true,
-  statementsUrl,               // URL of statements page (required)
-  accountDropdownSelector,     // sub-pattern 2: account selector
-  // Download buttons discovered dynamically by aria-label or link text
+  statementsUrl,               // URL of statements page (used if statementsNavSelector not set)
+  statementsNavSelector,       // string — selector for a nav element to click to reach statements page (alternative to statementsUrl)
+  accountDropdownSelector,     // sub-pattern 2: account selector (triggers per-account statement flow)
+  downloadButtonSelector,      // sub-pattern 2: per-month download button selector (default: 'button[aria-label*="Download"]')
+  // Sub-pattern 1: Download buttons discovered dynamically by "Download all" button text
 }
 ```
 
@@ -192,8 +199,10 @@ transactions: {
   exportModal: true,
   statementsLinkSelector,      // navigate to statements page
   exportLinkSelector,          // open export modal
+  startDateClickSelector,      // truthy — enables start-date calendar picker logic (in --all mode only)
   prevMonthSelector,           // calendar prev month button
-  nextMonthSelector,           // calendar next month button (if needed)
+  monthsBack,                  // number — how many months to navigate back in calendar (default: 14)
+  monthYearTriggerSelector,    // string — selector to read current month/year label for verification (default: '.month-year-trigger')
   dayButtonSelector,           // day button in calendar (parameterized)
   exportButtonSelector,        // confirm export
 }
@@ -227,7 +236,9 @@ The simplest pattern. Navigate to a page, click one button, CSV downloads immedi
 transactions: {
   directExport: true,
   navigationSelector,          // link/button to reach transaction history page
+  navigateToTransactions,      // async fn(page, options) — custom navigation function (replaces navigationSelector; for SPAs where locator.click() doesn't trigger React events)
   exportButtonSelector,        // the export button
+  csvSkipRows,                 // number — rows to skip at top of CSV before header (default: 0; use for files with metadata preamble)
 }
 ```
 
@@ -262,11 +273,16 @@ Generate a report, wait for it to be ready, then download. Used by institutions 
 transactions: {
   reportBased: true,
   reportUrl,                   // URL of reports page
-  fromDateSelector,            // date range inputs
-  toDateSelector,
+  transactionTypeSelector,     // string — selector for transaction type dropdown (optional)
+  transactionTypeValue,        // string — value to select in transaction type dropdown (default: 'Balance affecting')
+  dateRangeSelector,           // string — selector for date range input/picker (opens date range UI on click)
+  fromDateSelector,            // string — start date input within date range picker (default: auto-detected by placeholder/name)
+  toDateSelector,              // string — end date input within date range picker (default: auto-detected by placeholder/name)
+  formatSelector,              // string — selector for format dropdown (optional)
+  formatValue,                 // string — value to select in format dropdown (default: 'CSV')
   createReportSelector,        // generate report button
-  downloadLinkSelector,        // download link (appears when ready)
-  pollIntervalMs,              // how often to check if report is ready
+  downloadLinkSelector,        // download link (appears when ready; default: 'a:has-text("Download")')
+  refreshSelector,             // string — selector for refresh button to poll report status (optional; if absent, waits 5s between polls)
 }
 ```
 
