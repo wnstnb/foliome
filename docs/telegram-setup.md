@@ -1,12 +1,12 @@
 # Foliome Telegram Setup — Claude Code Channels
 
-Claude Code acts as the Telegram bot via the official Telegram plugin. No separate bot process (OpenClaw gateway) needed.
+Claude Code acts as the Telegram bot via the official Telegram plugin. No separate bot process needed.
 
 ## Prerequisites
 
 - Claude Code CLI installed (`claude --version` ≥ 2.1.77)
 - Bun runtime installed (`bun --version`)
-- Telegram bot token (from @BotFather — the `@FoliomeBot` token)
+- Telegram bot token (from @BotFather)
 - Claude Code Telegram plugin installed
 
 ## One-Time Setup
@@ -33,7 +33,7 @@ Start Claude Code with the channel:
 claude --channels plugin:telegram@claude-plugins-official
 ```
 
-DM `@FoliomeBot` on Telegram — it replies with a 6-character code. In the Claude Code session:
+DM your bot on Telegram — it replies with a 6-character code. In the Claude Code session:
 ```
 /telegram:access pair <code>
 ```
@@ -51,7 +51,7 @@ This prevents strangers from interacting with the bot.
 **Open a dedicated terminal window** and run:
 
 ```bash
-cd C:\Projects\foliome
+cd /path/to/foliome
 claude --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions
 ```
 
@@ -63,15 +63,15 @@ Flags:
 
 ### What Claude can do in this session:
 - Respond to Telegram messages (balances, queries, morning brief)
-- Run sync scripts: `node readers/run.js chase --balances`
+- Run sync scripts: `node readers/sync-all.js`
 - Query SQLite: `node -e "..."`
 - Read JSON output files
 - Send charts/images back to Telegram
+- Serve the dashboard Mini App (7 tabs + wiki browser)
 
 ## Important Notes
 
-- **Stop OpenClaw gateway before starting.** Only one process can poll the same Telegram bot token. If OpenClaw is running, stop it first (`Ctrl+C` or `openclaw gateway stop`).
-- **One bot token, one consumer.** Never run OpenClaw gateway and Claude Code channels simultaneously on the same bot.
+- **One bot token, one consumer.** Only one process can poll a given Telegram bot token at a time.
 - **Session stays open.** Closing the terminal stops the bot. Use a dedicated terminal window or `tmux`/`screen` on Linux.
 - **MFA during sync.** The sync scripts use `scripts/telegram-notify.js` (send-only) for MFA prompts. This works independently of Claude Code channels since it just calls the Telegram Bot API directly to send a message — it doesn't poll.
 
@@ -93,7 +93,7 @@ The dashboard server serves your financial overview as a Telegram Mini App — t
 
 3. Ask the agent (via Telegram) to show your dashboard — it sends an InlineKeyboardButton with `web_app: { url: <tunnel-url> }`.
 
-The server regenerates the dashboard from SQLite on each request (< 100ms), so it's always fresh.
+The server serves a React SPA from `dashboard/dist/` with API endpoints for live data. The SPA has 7 tabs (Brief, Overview, Transactions, Budget, Portfolio, Subscriptions, Wiki) with responsive layout — mobile in the Telegram WebView, full-page when opened wider.
 
 ### Bot Token for HMAC Validation
 

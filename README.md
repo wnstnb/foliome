@@ -9,19 +9,33 @@ An open-source alternative to paid data aggregators and manual CSV downloads. Yo
 You give your agent a bank URL. It visually explores the site, discovers the login flow, MFA patterns, and transaction download path, then writes a deterministic Playwright config. After that, daily syncs run automatically — no LLM cost, no screenshots, no API calls. The agent only returns when something breaks.
 
 ```
-AUTOMATION LAYER (how data is acquired)
-  browser-reader.js     Agent extraction     MFA bridge     API connectors
-  (Playwright)          (agent LLM)          (file-based)   (REST APIs)
-      |                      |                    |              |
-      v                      v                    v              v
-DATA LAYER (where data lives)
-  data/sync-output/*.json  -->  sync-engine/import.js  -->  data/foliome.db (SQLite)
-                                                             |
-                                                        sync-engine/classify.js
-      |
-      v
-SKILLS (what your agent can do with your data)
-  /sync, /morning-brief, /brief-me, /spending-alerts, ...
+SETUP (one-time per institution)
+  Agent explores bank website → discovers login, MFA, download patterns
+  → writes deterministic Playwright config (zero LLM cost on future runs)
+
+DAILY SYNC (automated)
+  ┌─────────────────────────────────────────────────────────────┐
+  │  Browser Reader (Playwright)          API Connectors        │
+  │  login → MFA → download CSVs/PDFs    REST API fetch         │
+  │  capture dashboard text               (no browser needed)   │
+  └──────────────────┬────────────────────────┬─────────────────┘
+                     v                        v
+              data/sync-output/*.json  (Layer 1 — raw JSON per institution)
+                     │
+                     v
+              sync-engine/import.js  →  classify.js
+              normalize + dedup         local DistilBERT model
+                     │
+                     v
+              data/foliome.db  (Layer 2 — SQLite)
+              balances · transactions · holdings · statement_balances
+                     │
+          ┌──────────┼──────────────┐
+          v          v              v
+       Skills     Dashboard      Wiki
+       /sync      React Mini    Agent memory
+       /brief-me  App (7 tabs)  (goals, patterns,
+       /alerts    via Telegram   preferences)
 ```
 
 **Layer 1 (JSON):** Raw sync output per institution. Human-reviewable, schema-agnostic.
@@ -30,9 +44,31 @@ SKILLS (what your agent can do with your data)
 
 ## Your agent builds its own integrations
 
-Foliome doesn't ship "support for 10 banks." It ships primitives and a skill (`/learn-institution`) that builds integrations with any institution. Nine anonymized templates in `readers/institutions/templates/` cover the most common patterns — the agent checks these first, then verifies against the live site. A [pattern guide](readers/institutions/templates/GUIDE.md) provides lookup tables for login flows, MFA types, download patterns, and common obstacles.
+Foliome ships primitives and a skill (`/learn-institution`) that builds integrations with any institution. The agent visually explores the bank's website, identifies the login flow, MFA pattern, and transaction download path, then writes a deterministic Playwright config. Anonymized templates in `readers/institutions/templates/` cover the most common combinations — the agent checks these first, then verifies against the live site. A [pattern guide](readers/institutions/templates/GUIDE.md) provides lookup tables for every pattern below, plus common obstacles and their solutions.
 
-Six transaction download patterns cover every institution encountered so far:
+**Login patterns** — how the agent gets in:
+
+| Pattern | Description |
+|---------|-------------|
+| Direct login | Username + password on the main page |
+| Iframe login | Login form inside an `<iframe>` (common with banking frameworks) |
+| Multi-step login | Email → Continue → method selection → password |
+| Landing page login | "Sign In" button on marketing page reveals the actual form |
+| Frame-busting iframe | Iframe login where the parent page navigates away after submit |
+| WebAuthn/passkey bypass | Skip passkey enrollment interstitials via CDP virtual authenticator |
+
+**MFA patterns** — how the agent handles second factors:
+
+| Pattern | Description |
+|---------|-------------|
+| SMS / Email | Click initiation button → wait for code → enter via MFA bridge |
+| Push notification | Select push option → poll for clearance (up to 180s) |
+| Device code | 6-digit code sent to trusted device → individual digit input fields |
+| TOTP | Authenticator app code → single input field |
+| Multi-method | Method selection tiles (SMS / push / call) → route to appropriate handler |
+| Email auto-poll | Gmail API extracts code automatically, falls back to SMS |
+
+**Transaction download patterns** — how the agent gets data out:
 
 | Pattern | Description |
 |---------|-------------|
