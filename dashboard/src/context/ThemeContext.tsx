@@ -28,28 +28,20 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     return 'light';
   });
 
-  // Track whether user has manually toggled — disables Telegram theme override
-  const [userOverride, setUserOverride] = useState(false);
-
   const toggleTheme = useCallback(() => {
-    setUserOverride(true);
     setTheme(t => t === 'dark' ? 'light' : 'dark');
   }, []);
 
   useEffect(() => {
     const root = document.documentElement;
+    // Use Foliome's own dark/light themes — Telegram only determines initial preference
     if (theme === 'dark') {
       root.classList.add('dark');
     } else {
       root.classList.remove('dark');
     }
-    // Only apply tg-theme if user hasn't manually toggled
-    if (isTg && !userOverride) {
-      root.classList.add('tg-theme');
-    } else {
-      root.classList.remove('tg-theme');
-    }
-  }, [theme, isTg, userOverride]);
+    root.classList.remove('tg-theme');
+  }, [theme]);
 
   return (
     <ThemeContext.Provider value={{ theme, toggleTheme, isTg }}>

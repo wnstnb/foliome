@@ -28,5 +28,5 @@ Shared helpers organized by function. Some run automatically during syncs, other
 |--------|---------|
 | `validate-data.js` | Check data semantics, sign normalization, database invariants |
 | `validate-slugs.js` | Check institution slug consistency across all config surfaces |
-| `discover-semantics.js` | Inspect CSV files to suggest a `data-semantics.json` entry |
+| `discover-semantics.js` | Inspect CSV or JSON sync-output to suggest a `data-semantics.json` entry |
 | `cleanup-downloads.js` | Delete download files older than 30 days (dry run by default) |

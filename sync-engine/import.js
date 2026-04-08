@@ -22,6 +22,7 @@ const DB_PATH = path.join(__dirname, '..', 'data', 'foliome.db');
 const SYNC_OUTPUT_DIR = path.join(__dirname, '..', 'data', 'sync-output');
 const SEMANTICS_PATH = path.join(__dirname, '..', 'config', 'data-semantics.json');
 const bankFilter = process.argv.includes('--bank') ? process.argv[process.argv.indexOf('--bank') + 1] : null;
+const forceImport = process.argv.includes('--force');
 
 // Deduplicate "no semantics" warnings (one per institution per run)
 const _semanticsWarned = new Set();
@@ -716,6 +717,21 @@ function main() {
       if (data.error && (!data.balances || data.balances.length === 0)) {
         console.log(`[import] Skipping ${institution} — error state: ${data.error}`);
         continue;
+      }
+
+      // Data semantics gate: block import for institutions with transactions but no semantics entry
+      if ((data.transactions || []).length > 0 && !semantics?.institutions?.[institution]) {
+        if (forceImport) {
+          console.warn(`[import] WARNING: No data-semantics entry for "${institution}" — importing as-is (--force)`);
+        } else {
+          console.warn(`[import] BLOCKED: No data-semantics.json entry for "${institution}"`);
+          console.warn(`[import]   Run: node scripts/discover-semantics.js ${institution}`);
+          console.warn(`[import]   Then add the entry to config/data-semantics.json`);
+          console.warn(`[import]   Or use --force to import without sign normalization`);
+          console.log(`[import] Skipping ${institution} — data semantics required for transaction import`);
+          results.push({ institution, balancesImported: 0, txnsImported: 0, txnsSkipped: 0, holdingsImported: 0 });
+          continue;
+        }
       }
 
       // Pre-import validation: check raw data matches expected conventions
