@@ -34,7 +34,7 @@ DAILY SYNC (automated)
           v          v              v
        Skills     Dashboard      Wiki
        /sync      React Mini    Agent memory
-       /brief-me  App (7 tabs)  (goals, patterns,
+       /brief-me  App served    (goals, patterns,
        /alerts    via Telegram   preferences)
 ```
 
@@ -44,40 +44,16 @@ DAILY SYNC (automated)
 
 ## Your agent builds its own integrations
 
-Foliome ships primitives and a skill (`/learn-institution`) that builds integrations with any institution. The agent visually explores the bank's website, identifies the login flow, MFA pattern, and transaction download path, then writes a deterministic Playwright config. Anonymized templates in `readers/institutions/templates/` cover the most common combinations — the agent checks these first, then verifies against the live site. A [pattern guide](readers/institutions/templates/GUIDE.md) provides lookup tables for every pattern below, plus common obstacles and their solutions.
+Foliome ships primitives and a skill (`/learn-institution`) that builds integrations with any institution. The agent visually explores the bank's website, identifies the login flow, MFA pattern, and transaction download path, then writes a deterministic Playwright config. Anonymized templates in `readers/institutions/templates/` cover the most common combinations — the agent checks these first, then verifies against the live site.
 
-**Login patterns** — how the agent gets in:
+The system handles the full spectrum of bank website complexity:
 
-| Pattern | Description |
-|---------|-------------|
-| Direct login | Username + password on the main page |
-| Iframe login | Login form inside an `<iframe>` (common with banking frameworks) |
-| Multi-step login | Email → Continue → method selection → password |
-| Landing page login | "Sign In" button on marketing page reveals the actual form |
-| Frame-busting iframe | Iframe login where the parent page navigates away after submit |
-| WebAuthn/passkey bypass | Skip passkey enrollment interstitials via CDP virtual authenticator |
+- **Login flows** — from simple username/password forms to iframe-embedded logins, multi-step authentication, landing pages that reveal hidden forms, frame-busting iframes, and passkey enrollment interstitials
+- **MFA methods** — SMS, email, push notifications, TOTP authenticator apps, device codes with individual digit inputs, and multi-method selection flows. Codes are exchanged via a file-based MFA bridge for background operation
+- **Transaction extraction** — CSV downloads (central dialogs, per-account pages, export modals, date pickers, single-button exports, async report generation), PDF statement parsing via LiteParse + agent extraction, and REST API connectors
+- **Error recovery** — graduated 4-level system: automatic retry → self-recovery (dismiss popups, navigate to dashboard) → adaptive bridge (agent-assisted via annotated screenshots) → skip with notification
 
-**MFA patterns** — how the agent handles second factors:
-
-| Pattern | Description |
-|---------|-------------|
-| SMS / Email | Click initiation button → wait for code → enter via MFA bridge |
-| Push notification | Select push option → poll for clearance (up to 180s) |
-| Device code | 6-digit code sent to trusted device → individual digit input fields |
-| TOTP | Authenticator app code → single input field |
-| Multi-method | Method selection tiles (SMS / push / call) → route to appropriate handler |
-| Email auto-poll | Gmail API extracts code automatically, falls back to SMS |
-
-**Transaction download patterns** — how the agent gets data out:
-
-| Pattern | Description |
-|---------|-------------|
-| A | CSV from central download dialog with account dropdown |
-| B | Per-account CSV download (navigate to each account) |
-| C | PDF statements + LiteParse text extraction + agent parsing |
-| D | Export modal with calendar date picker |
-| E | Direct single-button export |
-| F | Report-based async generation (create, wait, download) |
+A [pattern guide](readers/institutions/templates/GUIDE.md) provides lookup tables for login flows, MFA types, download patterns, statement balance extraction, custom web components, and common obstacles with their solutions.
 
 ## Quick start
 
@@ -134,30 +110,21 @@ Requires Bun and the Claude Code Telegram plugin. See [docs/telegram-setup.md](d
 claude --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions
 ```
 
-A Telegram Mini App dashboard is also available — a React SPA with 7 tabs (Brief, Overview, Transactions, Budget, Portfolio, Subscriptions, Wiki), interactive filters, category drill-downs, a Financial Health overlay, and a read-only wiki browser for the agent's knowledge base. The Brief tab is the landing page — a personalized daily financial narrative powered by agent memory and live data. The server validates requests via Telegram's HMAC-SHA256 initData, issues session tokens for API calls, and auto-detects the correct bot token. See [docs/telegram-setup.md](docs/telegram-setup.md#dashboard-mini-app-optional) for setup.
+A Telegram Mini App dashboard is also available — a responsive React SPA with tabs for net worth overview, transaction analysis, budgets, portfolio holdings, subscriptions, and an agent knowledge base wiki. The Brief tab is the landing page — a personalized daily financial narrative powered by agent memory and live data. Responsive layout adapts from mobile (Telegram WebView) to full-page (desktop browser). The server validates requests via Telegram's HMAC-SHA256 initData, issues session tokens for API calls, and auto-detects the correct bot token. See [docs/telegram-setup.md](docs/telegram-setup.md#dashboard-mini-app-optional) for setup.
 
 ## What your agent can do with your data
 
-Once the data layer is synced, 10 skills provide financial intelligence:
+Once the data layer is synced, a library of skills in `.claude/skills/` provides financial intelligence. All skills work from both desktop (terminal) and mobile (Telegram).
 
-| Category | Skill | What it does |
-|----------|-------|-------------|
-| **Infrastructure** | `/sync` | Sync all institutions — background execution, MFA handling, import, classify |
-| **Infrastructure** | `/learn-institution` | Build a new bank integration by visually exploring the login flow |
-| **Infrastructure** | `/getting-started` | Guided first-bank setup for new users |
-| **Awareness** | `/morning-brief` | Daily summary — net worth, recent activity, due dates, alerts |
-| **Awareness** | `/spending-alerts` | Detect large charges, low balances, unusual spending |
-| **Awareness** | `/payment-reminders` | Credit card payment due dates with tiered alerts |
-| **Query** | `/brief-me` | On-demand financial briefing — spending, portfolio, reports, CSV export |
-| **Dashboard** | `/custom-view` | Build a custom dashboard tab from a natural language request |
-| **Management** | `/category-override` | Reclassify transactions via natural language |
-| **Maintenance** | `/reflect` | Wiki maintenance — consolidate, update goals, discover patterns |
-
-All skills work from both desktop (terminal) and mobile (Telegram).
+- **Infrastructure** — `/sync` runs all institutions in parallel with MFA handling. `/learn-institution` builds new integrations interactively. `/getting-started` walks new users through their first bank.
+- **Awareness** — `/morning-brief` generates a daily financial summary. `/spending-alerts` monitors for large charges and low balances. `/payment-reminders` tracks credit card due dates.
+- **Query** — `/brief-me` answers on-demand questions about spending, portfolio, and trends with optional CSV export.
+- **Dashboard** — `/custom-view` builds new dashboard tabs from natural language requests.
+- **Management** — `/category-override` reclassifies transactions via natural language. `/reflect` maintains the agent's knowledge wiki.
 
 ## Transaction classification
 
-Local-only pipeline, no API calls. 17 transaction-level categories plus 6 account-type-implied categories:
+Local-only pipeline, no API calls. A tiered classification system handles every transaction:
 
 0. **Account-type-implied** — mortgage, auto loan, student loan, etc. skip the model entirely
 1. **Merchant rules** — pattern matching on description (user-defined overrides, highest trust)
@@ -166,27 +133,22 @@ Local-only pipeline, no API calls. 17 transaction-level categories plus 6 accoun
 
 ## Statement balances
 
-Historical period-end closing balances for "vs. Last Period" comparison. The dashboard shows `current_balance - statement_closing_balance` per account — green if improving, red if worsening. Five extraction patterns:
+Historical period-end closing balances for "vs. Last Period" comparison. The dashboard shows `current_balance - statement_closing_balance` per account — green if improving, red if worsening.
 
-| Pattern | Source | How |
-|---------|--------|-----|
-| S-A | PDF statements | Parse opening/closing balances from downloaded PDFs |
-| S-B | HTML statement list | Statement page shows balances inline in page text |
-| S-C | Dashboard text | "Last statement balance" label on dashboard |
-| S-D | Not available | No statement concept (investment/education accounts) |
-| S-E | CSV balance column | Running balance in transaction CSV + month-end anchor |
-
-Discovered automatically during `/learn-institution` (Q10-Q15). No manual configuration needed.
+Statement balances are extracted from whatever source each institution provides — PDF statements, HTML statement pages, dashboard text, CSV balance columns, or not available (investment/education accounts). The extraction method is discovered automatically during `/learn-institution` setup. No manual configuration needed. See the [pattern guide](readers/institutions/templates/GUIDE.md) for details on each extraction method.
 
 ## Security model
 
-- All credentials in `.env` (gitignored) — the agent never needs to see credential values
-- Security gate: domain + HTTPS verification before entering credentials
-- Persistent Chrome profiles reduce MFA frequency
-- Graduated error recovery: retry, self-recover, adaptive bridge, skip + notify
-- Parameterized SQL for all database writes
-- 4-tier popup dismissal (no unscoped text matching)
-- Transient MFA bridge files cleaned up after use
+Foliome handles bank credentials and financial data. The security model is designed so that credentials are never visible to the agent, never logged, and never stored as plaintext at rest.
+
+- **Credentials encrypted at rest** — bank login credentials in `.env` are automatically encrypted via [dotenvx](https://dotenvx.com) before every sync. Decrypted only in process memory at runtime, then discarded on exit. Optional Bitwarden vault integration fetches credentials at login time so they never touch `.env` at all.
+- **Security gate** — domain + HTTPS verification before Playwright enters any credentials. Hard abort on mismatch.
+- **Agent never sees credentials** — syncs run as background child processes. The agent only sees status messages in stdout. No credential values are printed, logged, or written to files.
+- **Content Security Policy** — all dashboard responses include CSP headers. Wiki markdown rendered without raw HTML. Blocked protocols, no external images, path-confined asset serving.
+- **Session security** — Telegram initData validated via HMAC-SHA256 with timing-safe comparison and replay protection.
+- **Data integrity** — failed syncs never destroy good data. Zero-balance protection, dedup on import, balance sanity checks.
+
+See [docs/security.md](docs/security.md) for the full security architecture — credential lifecycle, encryption enforcement, browser isolation, content security, session management, and what's gitignored.
 
 ## How this differs from Computer Use
 
@@ -218,13 +180,13 @@ readers/                        Browser automation primitives
   sanitize-text.js              Prompt injection defense (hidden element stripping + boundary markers)
   explore-interactive.js        Interactive visual explorer (step-by-step with annotated screenshots)
   institutions/                 Per-bank Playwright configs (created by /learn-institution)
-    templates/                  Anonymized pattern templates (9 proven patterns)
+    templates/                  Anonymized pattern templates covering common login/MFA/download combos
       GUIDE.md                  Pattern lookup tables, obstacle cheat sheet, component index
   tasks/
     extract-balances.js         Dashboard text capture for agent extraction
-    download-transactions.js    6 download patterns (A-F) + PDF pipeline
+    download-transactions.js    All transaction download patterns + PDF pipeline
     download-statements.js      Statement PDF downloads for balance extraction
-    PATTERNS.md                 Visual guide to all 6 transaction download patterns
+    PATTERNS.md                 Visual guide to transaction download patterns
 connectors/                     API integrations (no browser)
 sync-engine/                    Layer 2 persistence
   import.js                     JSON --> SQLite with normalization + dedup

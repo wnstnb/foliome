@@ -390,6 +390,7 @@ docs/                        — Architecture documents
   dashboard-customization.md — How to customize the React dashboard (add tabs, charts, filters)
   dashboard-design.md        — Design spec: colors, typography, animations, component specs
   how-browser-automation-works.md — Technical deep-dive on browser automation approach
+  security.md                — Full security architecture (credentials, encryption, browser isolation, CSP)
   telegram-setup.md          — Telegram bot and Mini App setup guide
   architecture-flow.png      — Architecture flow diagram
   browser-automation.png     — Browser automation diagram
