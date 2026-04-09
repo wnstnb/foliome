@@ -130,21 +130,12 @@ class BrowserReader {
 
     this.page = this.context.pages()[0] || await this.context.newPage();
 
-    // Disable WebAuthn if configured — prevents OS-level passkey dialogs from blocking automation.
-    // Must be done BEFORE navigating to any page that triggers WebAuthn enrollment.
-    if (this.config.login.disableWebAuthn) {
-      try {
-        const cdp = await this.page.context().newCDPSession(this.page);
-        await cdp.send('WebAuthn.enable');
-        await cdp.send('WebAuthn.addVirtualAuthenticator', {
-          options: { protocol: 'ctap2', transport: 'internal', hasResidentKey: true, hasUserVerification: true, isUserVerified: true },
-        });
-        await cdp.detach();
-        console.log(`[${this.config.institution}] WebAuthn disabled via CDP virtual authenticator`);
-      } catch (err) {
-        console.log(`[${this.config.institution}] WebAuthn disable failed (non-fatal): ${err.message}`);
-      }
-    }
+    // WebAuthn virtual authenticator is deferred to post-authentication.
+    // Activating it during login/MFA interferes with device-based 2FA flows
+    // (e.g., Apple ID push codes get cancelled when the virtual authenticator
+    // responds to WebAuthn probes). Passkey enrollment interstitials only appear
+    // after authentication, so deferring is safe for all institutions.
+    // Call activateWebAuthnGuard() after login+MFA completes.
 
     console.log(`[${this.config.institution}] Navigating to ${this.config.entryUrl}`);
     await this.page.goto(this.config.entryUrl, {
@@ -246,6 +237,28 @@ class BrowserReader {
     }
 
     return dismissed;
+  }
+
+  /**
+   * Activate CDP virtual authenticator to absorb passkey enrollment dialogs.
+   * Called AFTER login+MFA completes — never during authentication.
+   * Passkey enrollment interstitials only appear post-auth, so deferring is safe.
+   * During login/MFA, a virtual authenticator can interfere with device-based 2FA
+   * (e.g., Apple ID cancels push codes when the authenticator responds to WebAuthn probes).
+   */
+  async activateWebAuthnGuard() {
+    if (!this.config.login.disableWebAuthn) return;
+    try {
+      const cdp = await this.page.context().newCDPSession(this.page);
+      await cdp.send('WebAuthn.enable');
+      await cdp.send('WebAuthn.addVirtualAuthenticator', {
+        options: { protocol: 'ctap2', transport: 'internal', hasResidentKey: true, hasUserVerification: true, isUserVerified: true },
+      });
+      await cdp.detach();
+      console.log(`[${this.config.institution}] WebAuthn guard activated (post-auth)`);
+    } catch (err) {
+      console.log(`[${this.config.institution}] WebAuthn guard failed (non-fatal): ${err.message}`);
+    }
   }
 
   /**
