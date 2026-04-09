@@ -117,6 +117,7 @@ A Telegram Mini App dashboard is also available — a responsive React SPA with 
 Once the data layer is synced, a library of skills in `.claude/skills/` provides financial intelligence. All skills work from both desktop (terminal) and mobile (Telegram).
 
 - **Infrastructure** — `/sync` runs all institutions in parallel with MFA handling. `/learn-institution` builds new integrations interactively. `/getting-started` walks new users through their first bank.
+- **Scheduling** — `/foliome-loop` manages recurring tasks (e.g., daily non-MFA sync, weekly morning brief) with cron scheduling, failure tracking, and auto-suspend.
 - **Awareness** — `/morning-brief` generates a daily financial summary. `/spending-alerts` monitors for large charges and low balances. `/payment-reminders` tracks credit card due dates.
 - **Query** — `/brief-me` answers on-demand questions about spending, portfolio, and trends with optional CSV export.
 - **Dashboard** — `/custom-view` builds new dashboard tabs from natural language requests.
@@ -161,6 +162,7 @@ Foliome does not use Claude's Computer Use (screenshot-per-action). It uses a hy
   getting-started/              Guided first-bank setup for new users
   sync/                         Full sync orchestration with MFA handling
   learn-institution/            Build new bank integrations interactively
+  foliome-loop/                 Recurring task scheduling (cron-based)
   morning-brief/                Daily financial summary
   brief-me/                     On-demand financial briefing (spending, portfolio, reports)
   spending-alerts/              Large charge and low balance monitoring

@@ -67,6 +67,8 @@ When running as a Telegram agent (`--channels plugin:telegram`), you are managed
 
 **The user should never notice a restart.** Your CLAUDE.md, skills, and institution configs are all persistent. The handoff file bridges the gap.
 
+**Schedule registration:** After the handoff check, check `config/schedules.json`. If it exists and has entries with `enabled: true`, register each via CronCreate using the entry's `cron` and prompt. Update `cronJobId` values after registration. For missed runs: if an entry's `lastRun` is null or significantly older than its schedule period (e.g., >2x the period — daily = 48h, weekly = 336h), execute it immediately as a catch-up run before registering the recurring schedule.
+
 **Dashboard server:** If the dashboard server is not running, start it: `node scripts/dashboard-server.js &` (it auto-detects the correct bot token). If cloudflared tunnel is not running, start it: `cloudflared tunnel --url http://localhost:3847 &`. Check with `curl -s http://localhost:3847/health`.
 
 **Dashboard menu button:** After establishing the tunnel URL, set the bot's persistent menu button so the user always has one-tap access to the dashboard: `node scripts/telegram-notify.js --menu-button "<chatId>" "<tunnel-url>"`. This replaces the default "/" commands button with a "Dashboard" button next to the text input. Update it whenever the tunnel URL changes.
@@ -102,23 +104,21 @@ When the user messages via Telegram (via Claude Code channels), follow these rul
 
 **During syncs:** Use the `/sync` skill. It handles background execution, MFA polling, code routing, and progress reporting. See `.claude/skills/sync/SKILL.md` for the full orchestration.
 
-**Skills the agent supports (12 total):**
+**Skills the agent supports (11 total):**
 
-<!-- Dev-only skills (readiness-check, wrap-it-up) are excluded from the public repo by sync-public.sh -->
 | Category | Skill | Trigger |
 |----------|-------|---------|
 | Infrastructure | `/sync` | "sync", "update accounts", "refresh" |
 | Infrastructure | `/learn-institution` | "add a new bank", "set up [bank]" |
 | Infrastructure | `/getting-started` | "get started", "set up", "first bank" |
+| Scheduling | `/foliome-loop` | "schedule", "every day at", "recurring", "automate" |
 | Awareness | `/morning-brief` | "good morning", "daily summary" |
 | Awareness | `/spending-alerts` | "alert me on transactions over $500" |
 | Awareness | `/payment-reminders` | "what payments are due?" |
 | Query | `/brief-me` | "how much on restaurants?", "spending report", "how's my portfolio?", "show holdings" |
 | Management | `/category-override` | "classify X as Shopping" |
-| Management | `/readiness-check` | "check if ready to sync", "readiness check" |
 | Dashboard | `/custom-view` | "show me...", "add a tab for...", "build me a view of..." |
 | Maintenance | `/reflect` | "reflect", "update wiki", "daily maintenance" |
-| Session | `/wrap-it-up` | "wrap it up", end-of-session doc freshness check |
 
 ## Agent Memory (Wiki)
 
