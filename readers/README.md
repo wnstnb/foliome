@@ -12,7 +12,7 @@ Each institution config provides:
 - Transaction download dialog selectors (six patterns + PDF pipeline)
 - Text capture function (page text saved for agent-side balance extraction)
 - Interstitial handlers (passkey enrollment, promo pages)
-- WebAuthn/passkey disable via CDP virtual authenticator (`disableWebAuthn`)
+- WebAuthn/passkey guard via CDP virtual authenticator (`disableWebAuthn`) — deferred to post-auth
 - System Chrome auto-detection (`executablePath` to real Chrome binary)
 - Institution-specific popup dismiss selectors (`popupDismissSelectors`)
 - Dashboard URL for post-login recovery (`dashboardUrl`)
@@ -34,7 +34,7 @@ Each institution config provides:
 - Post-login interstitial handling (passkey enrollment → skip to dashboard)
 - Pop-up/modal dismissal via 4-tier system: framework IDs → container-scoped consent → modal-scoped → institution-specific
 - Dashboard URL recovery for unknown post-login pages
-- CDP virtual authenticator for WebAuthn/passkey bypass
+- CDP virtual authenticator for WebAuthn/passkey bypass (activated post-auth to avoid interfering with device-based 2FA)
 - CSV download with file capture
 - PDF statement download + LiteParse + agent extraction
 - Backdrop overlay bypass via `page.evaluate()` clicks

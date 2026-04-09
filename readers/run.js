@@ -169,12 +169,32 @@ async function handleMfa(reader, mfaSignal) {
 
   // Verify the code input is actually visible before requesting a code
   // If it's not, the page is in an unexpected state (intermediate modal, error, etc.)
+  // Check both main page and login iframe — some banks (Apple Card, Chase, Schwab)
+  // keep the MFA code inputs inside the auth iframe
   const codeSelectors = config.mfa.codeInputSelectors || ['input[type="tel"]', 'input[type="text"]'];
   let codeInputVisible = false;
+
+  // Determine where to look — iframe if still alive, otherwise main page
+  let frameLocator = null;
+  if (reader.loginFrame) {
+    try {
+      await reader.loginFrame.title();
+      frameLocator = reader.page.frameLocator(config.login.iframeSelector || 'iframe');
+    } catch { /* iframe detached — check main page only */ }
+  }
+
   for (const sel of codeSelectors) {
     try {
+      // Check iframe first (if present), then main page
+      if (frameLocator) {
+        const iframeInp = frameLocator.locator(sel).first();
+        if (await iframeInp.isVisible({ timeout: 5000 })) {
+          codeInputVisible = true;
+          break;
+        }
+      }
       const inp = reader.page.locator(sel).first();
-      if (await inp.isVisible({ timeout: 5000 })) {
+      if (await inp.isVisible({ timeout: 3000 })) {
         codeInputVisible = true;
         break;
       }
@@ -190,6 +210,12 @@ async function handleMfa(reader, mfaSignal) {
     // If still not dashboard, check again for code input
     for (const sel of codeSelectors) {
       try {
+        if (frameLocator) {
+          if (await frameLocator.locator(sel).first().isVisible({ timeout: 3000 })) {
+            codeInputVisible = true;
+            break;
+          }
+        }
         if (await reader.page.locator(sel).first().isVisible({ timeout: 3000 })) {
           codeInputVisible = true;
           break;
@@ -342,6 +368,10 @@ async function loginFlow(reader) {
   if (result.state !== 'logged-in') {
     throw new Error(`Could not reach dashboard — final state: ${result.state}`);
   }
+
+  // Activate WebAuthn guard now that auth is complete — absorbs passkey enrollment
+  // dialogs without interfering with login/MFA flows
+  await reader.activateWebAuthnGuard();
 
   return result;
 }

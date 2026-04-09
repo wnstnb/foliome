@@ -5,6 +5,7 @@
  *   multi-step on first visit (email → Next → password → Submit).
  *   Passkey enrollment interstitial after login — handled two ways:
  *     1. CDP virtual authenticator absorbs the OS passkey dialog (disableWebAuthn: true)
+ *        — activated AFTER login+MFA completes to avoid interfering with device-based 2FA
  *     2. Interstitial skip navigates to dashboard if enrollment URL is detected
  * MFA: SMS and email. No push.
  * Transactions: PDF statements via yearly ZIP downloads. Each year has a "Download all"
@@ -45,7 +46,7 @@ module.exports = {
     iframeSelector: null,
     // Adaptive: shows single-step on return visits, multi-step on first visit.
     // browser-reader handles both: if password is visible → single-step, else multi-step.
-    disableWebAuthn: true,  // Prevents OS-level passkey enrollment dialog
+    disableWebAuthn: true,  // Absorbs OS-level passkey enrollment dialog (activated post-auth, safe with MFA)
     usernameSelector: '#email',
     passwordSelector: '#password',
     submitSelector: '#btnLogin',
