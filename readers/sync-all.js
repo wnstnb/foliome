@@ -13,6 +13,7 @@
  *   node readers/sync-all.js --balances               # balances only
  *   node readers/sync-all.js --transactions           # transactions only
  *   node readers/sync-all.js --bank <institution>       # specific bank only
+ *   node readers/sync-all.js --banks a,b,c              # multiple specific banks
  *
  * Output: JSON files in data/sync-output/<bank>.json
  */
@@ -31,6 +32,9 @@ const MFA_DIR = path.join(__dirname, '..', 'data', 'mfa-pending');
 const balancesOnly = process.argv.includes('--balances');
 const transactionsOnly = process.argv.includes('--transactions');
 const bankFilter = process.argv.includes('--bank') ? process.argv[process.argv.indexOf('--bank') + 1] : null;
+const banksFilter = process.argv.includes('--banks')
+  ? process.argv[process.argv.indexOf('--banks') + 1].split(',').map(b => b.trim())
+  : null;
 const runImport = process.argv.includes('--import');
 const runClassify = process.argv.includes('--classify');
 
@@ -367,6 +371,43 @@ async function main() {
       return;
     }
     await runBank(bankFilter, isApi);
+  } else if (banksFilter) {
+    // Multi-bank filter mode (e.g., --banks schwab,mercury)
+    const filteredApi = apiConnectors.filter(b => banksFilter.includes(b));
+    const filteredBrowser = browserInstitutions.filter(b => banksFilter.includes(b));
+    const unknown = banksFilter.filter(b => !apiConnectors.includes(b) && !browserInstitutions.includes(b));
+    if (unknown.length > 0) {
+      console.log(`Warning: no config found for: ${unknown.join(', ')}`);
+    }
+    if (filteredApi.length === 0 && filteredBrowser.length === 0) {
+      console.log(`No matching banks found for: ${banksFilter.join(', ')}`);
+      return;
+    }
+
+    // Phase 1: filtered API connectors
+    if (filteredApi.length > 0) {
+      console.log('\n--- PHASE 1: API CONNECTORS (parallel) ---');
+      const apiTasks = filteredApi.map(bank => runBank(bank, true));
+      await Promise.all(apiTasks);
+    }
+
+    // Phase 2: filtered browser banks
+    if (filteredBrowser.length > 0) {
+      console.log('\n--- PHASE 2: BROWSERS (parallel — MFA via bridge if needed) ---');
+      console.log(`Launching ${filteredBrowser.join(', ')}...`);
+      console.log('If MFA is required, you will be prompted for codes.\n');
+
+      const browserTasks = filteredBrowser.map(bank => runBank(bank));
+
+      waitForMfaCodes(filteredBrowser).catch((err) => {
+        console.error(`[sync] MFA watcher error: ${err.message || err}`);
+      });
+      pollForAdaptiveRequests(filteredBrowser).catch((err) => {
+        console.error(`[sync] Adaptive watcher error: ${err.message || err}`);
+      });
+
+      await Promise.all(browserTasks);
+    }
   } else {
     // === PHASE 1: API connectors in parallel ===
     console.log('\n--- PHASE 1: API CONNECTORS (parallel) ---');

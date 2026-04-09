@@ -12,8 +12,9 @@ data/
 # Config (populated from config-templates/ on setup — personal data after customization)
 config/
 
-# Claude Code local settings (contains permission rules with personal IDs)
+# Claude Code local settings and runtime artifacts
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
 
 # Dependencies
 node_modules/

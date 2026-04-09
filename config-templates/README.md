@@ -41,5 +41,8 @@ Transaction classification rules. Pre-populated with common merchant patterns (S
 ]
 ```
 
+### schedules.json
+Recurring task schedules for `/foliome-loop`. **Starts empty.** Populated when the user creates recurring tasks (e.g., "sync non-MFA banks every day at 6am"). Each entry has a cron expression, the command/prompt to run, failure tracking, and auto-suspend state. Re-registered via CronCreate on every agent startup.
+
 ### data-semantics.json
 Per-institution sign conventions and column mappings. **Starts with schema only, no institutions.** Populated by `/learn-institution` (Q9) as each bank's CSV format is discovered. Tells `import.js` how to normalize raw transaction amounts to the canonical convention (debits negative, credits positive).
