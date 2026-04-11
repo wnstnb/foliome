@@ -4,7 +4,9 @@
     "debit": "negative (money leaving the account holder)",
     "credit": "positive (money entering the account holder)",
     "assetBalance": "positive (funds or value held)",
-    "liabilityBalance": "negative (amount owed)"
+    "liabilityBalance": "negative (amount owed)",
+    "holdingQuantity": "positive = long, negative = short",
+    "holdingCostBasis": "total dollars (not per-share)"
   },
   "institutions": {}
 }

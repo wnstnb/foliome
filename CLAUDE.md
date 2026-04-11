@@ -58,14 +58,22 @@ For per-institution details (login types, MFA, download patterns, custom compone
 
 When running as a Telegram agent (`--channels plugin:telegram`), you are managed by a supervisor that auto-restarts you on exit. Context management is critical — every message at 1M tokens costs 1M input tokens.
 
-**On startup:** Check for `data/agent-handoff.md`. If it exists, read it — it contains context from your previous session (what was happening, pending tasks, recent user requests). After reading, delete the file so you don't re-read stale handoffs.
+**On startup:** A `SessionStart` hook automatically runs `scripts/agent-startup.sh`, which:
+1. Starts the dashboard server if not running
+2. Injects the contents of `data/agent-handoff.md` (if it exists) into your context
+3. Lists enabled schedules from `config/schedules.json` that need CronCreate registration
+4. Shows the path to prior conversation transcripts
+
+After processing the injected startup context, delete `data/agent-handoff.md` so you don't re-read stale handoffs. Register any listed schedules via CronCreate immediately.
+
+**Prior conversation transcripts:** Full `.jsonl` transcripts of prior sessions are stored at `~/.claude/projects/-Users-wband-Projects-foliome/`. If you need context from a previous session beyond what the handoff file provides, read the most recent transcript. The startup hook outputs the path to the latest one.
 
 **Context management:** When your conversation is very long and you notice degraded performance, high latency, or the user asks you to restart:
 1. Write a handoff file to `data/agent-handoff.md` summarizing: what was the user's last request, any pending work, recent sync results, and anything the next session needs to know.
 2. Tell the user you're restarting for a fresh session (they'll see you come back in ~10 seconds).
 3. Exit by running: `kill $PPID` (the supervisor will restart you automatically).
 
-**The user should never notice a restart.** Your CLAUDE.md, skills, and institution configs are all persistent. The handoff file bridges the gap.
+**The user should never notice a restart.** Your CLAUDE.md, skills, and institution configs are all persistent. The handoff file bridges the gap. The `SessionStart` hook ensures the next session has context immediately.
 
 **Schedule registration:** After the handoff check, check `config/schedules.json`. If it exists and has entries with `enabled: true`, register each via CronCreate using the entry's `cron` and prompt. Update `cronJobId` values after registration. For missed runs: if an entry's `lastRun` is null or significantly older than its schedule period (e.g., >2x the period — daily = 48h, weekly = 336h), execute it immediately as a catch-up run before registering the recurring schedule.
 
@@ -265,11 +273,18 @@ Task-phase failures (balances, transactions) go through a 4-level recovery syste
 
 - `readers/run.js` — CLI for single-institution sync (`--balances`, `--transactions`, `--explore`)
 - `readers/sync-all.js` — Parallel sync orchestrator (all institutions)
+- `readers/explore-interactive.js` — Interactive browser explorer for discovering bank UI patterns
+- `readers/explore.js` / `readers/explore-cmd.js` — Explorer primitives and CLI entry point
+- `connectors/real-estate.js` — Real estate valuation via Google/Zillow/Redfin scraping
 - `sync-engine/import.js` — JSON → SQLite transform with normalization + dedup
 - `sync-engine/classify.js` — Transaction classifier
 - `scripts/dashboard-server.js` — Telegram Mini App server (auth, API, static serving)
+- `scripts/dashboard-queries.js` — All SQL query functions for dashboard API endpoints
 - `scripts/telegram-notify.js` — Telegram utility (sendMessage, sendPhoto, sendDashboard, setMenuButton, waitForReply)
 - `scripts/credentials.js` — Credential resolution (Bitwarden vault → .env fallback)
+- `scripts/vault.js` — Bitwarden vault CLI wrapper (search, map, test, migrate)
+- `scripts/gmail-mfa.js` — Gmail API MFA code retrieval for email-based MFA
+- `scripts/cleanup-downloads.js` — Remove stale download files after import
 - `config/` — All config files (populated from `config-templates/` on setup, gitignored)
 - `data/` — All runtime data (gitignored): `sync-output/`, `foliome.db`, `downloads/`, `wiki/`, `brief/`, `models/`
 - `.claude/skills/` — Agent skills (discoverable via /slash-commands)

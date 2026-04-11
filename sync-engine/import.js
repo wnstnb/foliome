@@ -17,6 +17,7 @@ const crypto = require('crypto');
 const Database = require('better-sqlite3');
 
 const { validateSlug } = require('../scripts/validate-slugs');
+const { parseSymbol } = require('./parse-symbol');
 
 const DB_PATH = path.join(__dirname, '..', 'data', 'foliome.db');
 const SYNC_OUTPUT_DIR = path.join(__dirname, '..', 'data', 'sync-output');
@@ -259,6 +260,13 @@ function initDb() {
       price REAL,
       market_value REAL,
       cost_basis REAL,
+      underlying TEXT,
+      instrument_type TEXT,
+      put_call TEXT,
+      strike REAL,
+      expiry TEXT,
+      multiplier INTEGER DEFAULT 1,
+      asset_type TEXT,
       currency TEXT DEFAULT 'USD',
       synced_at TEXT NOT NULL,
       UNIQUE(account_id, symbol, synced_at)
@@ -298,6 +306,23 @@ function initDb() {
     CREATE INDEX IF NOT EXISTS idx_holdings_account ON holdings(account_id, synced_at);
     CREATE INDEX IF NOT EXISTS idx_statement_balances_account ON statement_balances(account_id, period_end);
   `);
+
+  // Migrate existing holdings tables: add new columns if missing (idempotent)
+  const newCols = [
+    ['underlying', 'TEXT'],
+    ['instrument_type', 'TEXT'],
+    ['put_call', 'TEXT'],
+    ['strike', 'REAL'],
+    ['expiry', 'TEXT'],
+    ['multiplier', 'INTEGER DEFAULT 1'],
+    ['asset_type', 'TEXT'],
+  ];
+  for (const [col, type] of newCols) {
+    try { db.exec(`ALTER TABLE holdings ADD COLUMN ${col} ${type}`); } catch {}
+  }
+
+  // Create index after migration ensures column exists
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_holdings_underlying ON holdings(underlying, synced_at)`);
 
   return db;
 }
@@ -603,31 +628,79 @@ function importInstitution(db, institution, data) {
     }
   }
 
-  // Import holdings (from balance data that includes positions)
+  // Import holdings from both sources:
+  // 1. Top-level data.holdings[] (new format — Schwab connector, future brokerages)
+  // 2. data.balances[].positions[] (legacy format — embedded in balance records)
   const insertHolding = db.prepare(`
-    INSERT OR REPLACE INTO holdings (institution, account_id, symbol, name, quantity, price, market_value, cost_basis, currency, synced_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT OR REPLACE INTO holdings (institution, account_id, symbol, name, quantity, price, market_value, cost_basis,
+      underlying, instrument_type, put_call, strike, expiry, multiplier, asset_type, currency, synced_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
-  for (const bal of (data.balances || [])) {
-    const positions = bal.positions || [];
-    for (const pos of positions) {
-      if (pos.symbol) {
-        insertHolding.run(
-          institution,
-          bal.accountId || bal.account_id,
-          pos.symbol,
-          pos.name || null,
-          pos.quantity || 0,
-          pos.price || 0,
-          pos.marketValue || pos.market_value || 0,
-          pos.costBasis || pos.cost_basis || null,
-          'USD',
-          syncedAt
-        );
-        holdingsImported++;
+  // Determine cost basis format from data-semantics holdingsSemantics
+  const holdingsSemantics = semantics?.institutions?.[institution]?.holdingsSemantics || {};
+  const costBasisFormat = holdingsSemantics.costBasisFormat || 'total';
+
+  // Collect positions from both sources
+  const allPositions = [];
+
+  // Source 1: top-level holdings array
+  for (const pos of (data.holdings || [])) {
+    if (pos.symbol || pos.name) {
+      allPositions.push({
+        accountId: pos.accountId || pos.account_id,
+        ...pos,
+      });
+    }
+  }
+
+  // Source 2: legacy balances[].positions[] (only if no top-level holdings)
+  if (allPositions.length === 0) {
+    for (const bal of (data.balances || [])) {
+      for (const pos of (bal.positions || [])) {
+        if (pos.symbol || pos.name) {
+          allPositions.push({
+            accountId: bal.accountId || bal.account_id,
+            ...pos,
+          });
+        }
       }
     }
+  }
+
+  for (const pos of allPositions) {
+    const symbol = pos.symbol || '';
+    const parsed = parseSymbol(symbol, pos.name);
+    const quantity = pos.quantity || 0;
+    const marketValue = pos.marketValue || pos.market_value || 0;
+    const rawCostBasis = pos.costBasis ?? pos.cost_basis ?? null;
+
+    // Normalize cost basis: if source gives per-share, multiply by abs(qty) × multiplier
+    let costBasis = rawCostBasis;
+    if (costBasis !== null && costBasis !== undefined && costBasisFormat === 'per_share') {
+      costBasis = costBasis * Math.abs(quantity) * parsed.multiplier;
+    }
+
+    insertHolding.run(
+      institution,
+      pos.accountId,
+      symbol,
+      pos.name || null,
+      quantity,
+      pos.price || 0,
+      marketValue,
+      costBasis,
+      parsed.underlying,
+      parsed.instrumentType,
+      parsed.putCall,
+      parsed.strike,
+      parsed.expiry,
+      parsed.multiplier,
+      pos.assetType || pos.asset_type || null,
+      'USD',
+      syncedAt
+    );
+    holdingsImported++;
   }
 
   // Import statement balances (period-end closing balances from statements)

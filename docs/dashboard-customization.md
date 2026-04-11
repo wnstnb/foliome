@@ -246,20 +246,48 @@ To rearrange: reorder the JSX in the component. To add a new KPI:
 
 ## Budget Configuration
 
-`config/budgets.json` maps category names to monthly dollar limits:
+`config/budgets.json` defines monthly budgets. Three formats are supported, and they can be mixed:
 
 ```json
 {
   "Restaurants": 500,
-  "Groceries": 400,
-  "Shopping": 300,
-  "Subscription": 100,
-  "Entertainment": 150,
-  "Utilities": 200
+  "Shopping": { "limit": 300, "rollover": true },
+  "All Credit Cards": {
+    "limit": 2000,
+    "scope": { "account_type": "credit", "exclude_categories": ["Subscription"] }
+  }
 }
 ```
 
-The Budget tab reads this config and compares against current month spending. Progress bars turn yellow at 60% and red at 100%.
+### Category budget (plain number or `{limit}`)
+
+Tracks spending in a single transaction category. Progress bars turn yellow at 60% and red at 100%.
+
+### Rollover (`{limit, rollover: true}`)
+
+Unused budget from last month carries forward (overspend carries as debt). Capped at 1x the monthly limit to prevent ballooning. The dashboard shows the rollover amount as a subtitle.
+
+### Scoped budget (`{limit, scope}`)
+
+Tracks total spending across accounts, filtered by scope criteria. Scope filters compose — all specified criteria must match:
+
+| Scope key | Effect | Example |
+|-----------|--------|---------|
+| `account_type` | All accounts of a type | `"credit"`, `"checking"` |
+| `institution` | All accounts from an institution | `"chase"` (matches by `account_id` prefix) |
+| `accounts` | Explicit account ID list | `["chase-credit-sapphire-5501", "apple-card-credit"]` |
+| `categories` | Only count these categories (whitelist) | `["Restaurants", "Shopping"]` |
+| `exclude_categories` | Count everything except these (blacklist) | `["Subscription", "Transfer"]` |
+
+If both `categories` and `exclude_categories` are set, the whitelist wins.
+
+### Budget tab visualization
+
+The Budget tab shows a cumulative pacing chart at the top — a diagonal pace line (budget spread linearly across the month) vs. the actual cumulative spend curve. Green when under pace, red when over. Below the chart, individual budget bars show each category and scoped budget with an info icon that explains the underlying logic.
+
+### Data flow
+
+`getBudgets()` in `dashboard-queries.js` reads `config/budgets.json`, queries current and last month spending, computes rollover, filters scoped transactions, and builds daily cumulative data for the pacing chart. Served at `/api/budgets`.
 
 ## SQL Query Reference
 

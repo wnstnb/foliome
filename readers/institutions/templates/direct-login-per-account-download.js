@@ -67,15 +67,10 @@ module.exports = {
   transactions: {
     // Pattern B: Per-account download
     // Navigate to each account page individually, click download link, get CSV, go back.
-    // Custom Date Range: after filling date inputs, click INSIDE the modal (not outside)
-    // to blur and trigger Angular validation. The Download button only enables after blur.
-    // The download modal lives in .cdk-overlay-container (CDK overlay), not the main DOM.
-    // Time Period dropdown is a <c1-ease-select> — click .c1-ease-select-trigger to open,
-    // then click [role="option"] to select.
+    // If the bank uses custom dropdown components, use timePeriodOptions to map labels.
+    // Some banks require clicking inside the modal to blur before the download button enables.
     perAccount: true,
-    accountButtonPattern: 'button[id^="summary-"]',
     downloadLinkSelector: '#downloadStatementTransactions',
-    timePeriodDropdownButton: null,  // Uses visible option matching
     timePeriodOptions: {
       all: 'Year-to-Date',
       last30: 'Last 30 Days',

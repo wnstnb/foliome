@@ -85,9 +85,9 @@ export const INSTITUTION_COLORS: Record<string, string> = {
   usaa: '#003B75',
   wealthfront: '#480FEB',
   betterment: '#0A4BF5',
-  mercury: '#352BF9',
-  bloomwell: '#8B5CF6',
   'goldman-sachs': '#6D8A96',
+  tiaa: '#00558C',
+  nationwide: '#004B87',
 };
 
 /** Simple Icons CDN slugs for known institutions */
