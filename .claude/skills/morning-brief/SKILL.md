@@ -60,6 +60,18 @@ Key data points:
 
 ## Brief Composition
 
+### Greeting
+
+**Do not guess the day of the week.** Compute it programmatically:
+
+```javascript
+const now = new Date();
+const greeting = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+// e.g. "Saturday, April 11"
+```
+
+Use this computed value for the `greeting` field. LLMs are unreliable at day-of-week calculations.
+
 ### Headline
 
 ```json

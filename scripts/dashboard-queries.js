@@ -203,24 +203,72 @@ function getSpending(dbPath, filters = {}) {
   return { byCategory, monthlyTrend, total };
 }
 
-// getHoldings(dbPath) - current investment positions
+// getHoldings(dbPath) - current investment positions, grouped by underlying
 function getHoldings(dbPath) {
   const db = openDb(dbPath);
 
+  // Fetch latest holdings including new structured fields
   const holdings = db.prepare(`
-    SELECT h.account_id, h.symbol, h.name, h.quantity, h.price, h.market_value,
-           h.market_value * 100.0 / SUM(h.market_value) OVER () as pct_allocation
+    SELECT h.account_id, h.symbol, h.name, h.quantity, h.price, h.market_value, h.cost_basis,
+           h.underlying, h.instrument_type, h.put_call, h.strike, h.expiry, h.multiplier
     FROM holdings h
     INNER JOIN (SELECT account_id, symbol, MAX(synced_at) as ms FROM holdings GROUP BY account_id, symbol) m
     ON h.account_id = m.account_id AND h.symbol = m.symbol AND h.synced_at = m.ms
-    WHERE h.market_value > 0
+    WHERE h.market_value != 0 OR h.quantity != 0
     ORDER BY h.market_value DESC
   `).all();
 
-  const totalValue = holdings.reduce((s, h) => s + h.market_value, 0);
+  const totalValue = holdings.reduce((s, h) => s + (h.market_value || 0), 0);
+
+  // Build account list with display names (from balances table)
+  const accountIds = [...new Set(holdings.map(h => h.account_id))];
+  const accounts = accountIds.map(id => {
+    let name = id;
+    try {
+      const bal = db.prepare(`SELECT account_name FROM balances WHERE account_id = ? ORDER BY synced_at DESC LIMIT 1`).get(id);
+      if (bal?.account_name) name = bal.account_name;
+    } catch {}
+    return { account_id: id, account_name: name };
+  });
+
+  // Build grouped structure by underlying
+  const groupMap = {};
+  for (const h of holdings) {
+    const key = h.underlying || h.symbol || 'OTHER';
+    if (!groupMap[key]) {
+      groupMap[key] = {
+        underlying: key,
+        totalMarketValue: 0,
+        totalCostBasis: 0,
+        totalShares: 0,
+        optionCount: 0,
+        pct_allocation: 0,
+        positions: [],
+      };
+    }
+    groupMap[key].totalMarketValue += (h.market_value || 0);
+    groupMap[key].totalCostBasis += (h.cost_basis || 0);
+    if (h.instrument_type !== 'option') groupMap[key].totalShares += (h.quantity || 0);
+    else groupMap[key].optionCount++;
+    groupMap[key].positions.push(h);
+  }
+
+  // Sort positions within each group: equity first, then options by expiry
+  const groups = Object.values(groupMap).map(g => {
+    g.positions.sort((a, b) => {
+      if (a.instrument_type === 'equity' && b.instrument_type !== 'equity') return -1;
+      if (a.instrument_type !== 'equity' && b.instrument_type === 'equity') return 1;
+      if (a.expiry && b.expiry) return a.expiry.localeCompare(b.expiry);
+      return 0;
+    });
+    g.pct_allocation = totalValue > 0 ? (g.totalMarketValue / totalValue) * 100 : 0;
+    return g;
+  });
+
+  groups.sort((a, b) => Math.abs(b.totalMarketValue) - Math.abs(a.totalMarketValue));
 
   db.close();
-  return { holdings, totalValue };
+  return { holdings, groups, accounts, totalValue };
 }
 
 // getSubscriptions(dbPath) - recurring charges detected by pattern
@@ -295,6 +343,8 @@ function getHealth(dbPath) {
 }
 
 // getBudgets(dbPath, configPath) - budget config + current month spending
+// Supports: plain numbers, {limit, rollover} objects, and scoped budgets
+// Scoped budgets filter by account_type, institution, or explicit account list
 function getBudgets(dbPath, configPath) {
   const db = openDb(dbPath);
   const budgetConfigPath = configPath || path.join(__dirname, '..', 'config', 'budgets.json');
@@ -307,6 +357,7 @@ function getBudgets(dbPath, configPath) {
   } catch {}
 
   // Current month spending by category
+  // GROUP BY 1 ensures grouping by the COALESCE alias, not the raw column
   const spending = db.prepare(`
     SELECT COALESCE(user_category, category) as category,
            SUM(amount) as spent,
@@ -315,8 +366,32 @@ function getBudgets(dbPath, configPath) {
     WHERE date >= date('now', 'start of month')
       AND category NOT IN ('Transfer', 'Income')
       AND amount < 0
-    GROUP BY category
+    GROUP BY 1
     ORDER BY spent ASC
+  `).all();
+
+  // Last month spending by category (for rollover calculation)
+  const lastMonthSpending = db.prepare(`
+    SELECT COALESCE(user_category, category) as category,
+           SUM(amount) as spent
+    FROM transactions
+    WHERE date >= date('now', 'start of month', '-1 month')
+      AND date < date('now', 'start of month')
+      AND category NOT IN ('Transfer', 'Income')
+      AND amount < 0
+    GROUP BY 1
+  `).all();
+
+  // All current-month transactions with account + category info (for scoped budgets)
+  const allTxns = db.prepare(`
+    SELECT t.account_id, t.amount,
+           COALESCE(t.user_category, t.category) as category,
+           (SELECT b.account_type FROM balances b
+            WHERE b.account_id = t.account_id
+            ORDER BY b.synced_at DESC LIMIT 1) as account_type
+    FROM transactions t
+    WHERE t.date >= date('now', 'start of month')
+      AND t.amount < 0
   `).all();
 
   db.close();
@@ -325,21 +400,130 @@ function getBudgets(dbPath, configPath) {
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
   const dayOfMonth = now.getDate();
 
-  // Merge budget config with actual spending
-  const categories = Object.entries(budgetConfig).map(([category, budget]) => {
-    const actual = spending.find(s => s.category === category);
-    return {
-      category,
-      budget,
-      spent: actual ? Math.abs(actual.spent) : 0,
-      txn_count: actual ? actual.txn_count : 0,
-    };
-  });
+  const categories = [];
+  const scopedBudgets = [];
+
+  for (const [label, value] of Object.entries(budgetConfig)) {
+    // Parse config: plain number, {limit} object, or {limit, scope} object
+    const isObject = typeof value === 'object' && value !== null;
+    const limit = isObject ? value.limit : value;
+    const rollover = isObject && value.rollover === true;
+    const scope = isObject ? value.scope : undefined;
+
+    if (scope) {
+      // Scoped budget — filter transactions by scope criteria
+      const matched = allTxns.filter(t => {
+        // Account filter (at least one must be specified)
+        let accountMatch = false;
+        if (scope.accounts) accountMatch = scope.accounts.includes(t.account_id);
+        else if (scope.account_type) accountMatch = t.account_type === scope.account_type;
+        else if (scope.institution) accountMatch = t.account_id.startsWith(scope.institution + '-');
+        if (!accountMatch) return false;
+
+        // Category filter (optional — whitelist takes precedence over blacklist)
+        if (scope.categories) return scope.categories.includes(t.category);
+        if (scope.exclude_categories) return !scope.exclude_categories.includes(t.category);
+        return true;
+      });
+      const spent = matched.reduce((s, t) => s + Math.abs(t.amount), 0);
+
+      // Build human-readable description of what this budget tracks
+      const descParts = [];
+      if (scope.account_type) descParts.push(`All ${scope.account_type} accounts`);
+      else if (scope.institution) descParts.push(`All ${scope.institution} accounts`);
+      else if (scope.accounts) descParts.push(`Accounts: ${scope.accounts.join(', ')}`);
+      if (scope.categories) descParts.push(`Only: ${scope.categories.join(', ')}`);
+      if (scope.exclude_categories) descParts.push(`Excludes: ${scope.exclude_categories.join(', ')}`);
+      descParts.push(`Limit: $${limit.toLocaleString()}/mo`);
+
+      scopedBudgets.push({
+        label,
+        budget: limit,
+        spent: Math.round(spent * 100) / 100,
+        txn_count: matched.length,
+        scope,
+        description: descParts.join(' · '),
+      });
+    } else {
+      // Category budget
+      const actual = spending.find(s => s.category === label);
+      let effectiveBudget = limit;
+      let rolloverAmount = 0;
+
+      if (rollover) {
+        const lastMonth = lastMonthSpending.find(s => s.category === label);
+        const lastMonthSpent = lastMonth ? Math.abs(lastMonth.spent) : 0;
+        rolloverAmount = limit - lastMonthSpent;
+        // Cap rollover at 1x the monthly limit to prevent balloon
+        rolloverAmount = Math.max(-limit, Math.min(limit, rolloverAmount));
+        effectiveBudget = limit + rolloverAmount;
+      }
+
+      // Build description
+      const catDescParts = [`Category: ${label}`, `Limit: $${limit.toLocaleString()}/mo`];
+      if (rollover) catDescParts.push(`Rollover enabled (capped at $${limit.toLocaleString()})`);
+
+      categories.push({
+        category: label,
+        budget: effectiveBudget,
+        baseBudget: limit,
+        rollover,
+        rolloverAmount: rollover ? rolloverAmount : 0,
+        spent: actual ? Math.abs(actual.spent) : 0,
+        txn_count: actual ? actual.txn_count : 0,
+        description: catDescParts.join(' · '),
+      });
+    }
+  }
 
   const totalBudget = categories.reduce((s, c) => s + c.budget, 0);
   const totalSpent = categories.reduce((s, c) => s + c.spent, 0);
 
-  return { categories, totalBudget, totalSpent, daysInMonth, dayOfMonth };
+  // Daily cumulative spending for pacing chart (category budgets only)
+  // Build a day-by-day cumulative total from allTxns filtered to budget categories
+  const budgetCategoryNames = new Set(categories.map(c => c.category));
+  const dailySpend = {};
+  for (const t of allTxns) {
+    if (!t.category || !budgetCategoryNames.has(t.category)) continue;
+    // Extract day-of-month from account_id? No — need date. Query separately.
+  }
+
+  // Query daily totals for budget categories
+  const reopenDb = openDb(dbPath);
+  const budgetCatList = categories.map(c => c.category);
+  const placeholders = budgetCatList.map((_, i) => `$cat${i}`).join(',');
+  const catParams = {};
+  budgetCatList.forEach((c, i) => catParams[`cat${i}`] = c);
+
+  let dailyCumulative = [];
+  if (budgetCatList.length > 0) {
+    const dailyRows = reopenDb.prepare(`
+      SELECT CAST(strftime('%d', date) AS INTEGER) as day,
+             ROUND(SUM(ABS(amount)), 2) as spent
+      FROM transactions
+      WHERE date >= date('now', 'start of month')
+        AND COALESCE(user_category, category) IN (${placeholders})
+        AND amount < 0
+      GROUP BY day
+      ORDER BY day
+    `).all(catParams);
+
+    // Build cumulative array for every day up to today
+    let cumulative = 0;
+    const spendByDay = {};
+    dailyRows.forEach(r => spendByDay[r.day] = r.spent);
+    for (let d = 1; d <= dayOfMonth; d++) {
+      cumulative += (spendByDay[d] || 0);
+      dailyCumulative.push({
+        day: d,
+        actual: Math.round(cumulative * 100) / 100,
+        pace: Math.round((totalBudget / daysInMonth) * d * 100) / 100,
+      });
+    }
+  }
+  reopenDb.close();
+
+  return { categories, scopedBudgets, totalBudget, totalSpent, daysInMonth, dayOfMonth, dailyCumulative };
 }
 
 module.exports = { getOverview, getTransactions, getSpending, getHoldings, getSubscriptions, getHealth, getBudgets };

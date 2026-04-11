@@ -1,10 +1,14 @@
 {
   "Restaurants": 500,
   "Groceries": 400,
-  "Shopping": 300,
+  "Shopping": { "limit": 300, "rollover": true },
   "Subscription": 100,
   "Entertainment": 150,
   "Utilities": 200,
   "Transportation": 150,
-  "Healthcare": 100
+  "Healthcare": 100,
+  "All Credit Cards": {
+    "limit": 2000,
+    "scope": { "account_type": "credit" }
+  }
 }

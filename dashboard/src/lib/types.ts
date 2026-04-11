@@ -49,7 +49,29 @@ export interface Holding {
   quantity: number;
   price: number;
   market_value: number;
+  cost_basis?: number;
+  underlying?: string;
+  instrument_type?: string;
+  put_call?: string;
+  strike?: number;
+  expiry?: string;
+  multiplier?: number;
   pct_allocation?: number;
+}
+
+export interface HoldingGroup {
+  underlying: string;
+  totalMarketValue: number;
+  totalCostBasis: number;
+  totalShares: number;
+  optionCount: number;
+  pct_allocation: number;
+  positions: Holding[];
+}
+
+export interface HoldingAccount {
+  account_id: string;
+  account_name: string;
 }
 
 export interface Subscription {
@@ -73,8 +95,29 @@ export interface HealthMonth {
 export interface BudgetCategory {
   category: string;
   budget: number;
+  baseBudget: number;
+  rollover: boolean;
+  rolloverAmount: number;
   spent: number;
   txn_count: number;
+  description: string;
+}
+
+export interface BudgetScope {
+  account_type?: string;
+  accounts?: string[];
+  institution?: string;
+  categories?: string[];
+  exclude_categories?: string[];
+}
+
+export interface ScopedBudget {
+  label: string;
+  budget: number;
+  spent: number;
+  txn_count: number;
+  scope: BudgetScope;
+  description: string;
 }
 
 export interface PaymentDue {
@@ -147,6 +190,8 @@ export interface SpendingData {
 
 export interface HoldingsData {
   holdings: Holding[];
+  groups: HoldingGroup[];
+  accounts: HoldingAccount[];
   totalValue: number;
 }
 
@@ -160,12 +205,20 @@ export interface HealthData {
   months: HealthMonth[];
 }
 
+export interface DailyCumulative {
+  day: number;
+  actual: number;
+  pace: number;
+}
+
 export interface BudgetsData {
   categories: BudgetCategory[];
+  scopedBudgets: ScopedBudget[];
   totalBudget: number;
   totalSpent: number;
   daysInMonth: number;
   dayOfMonth: number;
+  dailyCumulative: DailyCumulative[];
 }
 
 // ─── Wiki ───
