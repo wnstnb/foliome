@@ -13,7 +13,6 @@
 
 const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
 const Database = require('better-sqlite3');
 
 const { validateSlug } = require('../scripts/validate-slugs');
@@ -206,6 +205,10 @@ function initDb() {
     );
 
     -- Day-to-day transactions: checking, savings, credit cards, mortgage payments
+    -- Natural-key UNIQUE on (institution, account_id, date, amount, description).
+    -- No synthetic dedup_key — derived state in the schema is fragile (any change in the
+    -- formula invalidates every historical row). The natural key is stable across re-syncs
+    -- because date/amount/description are what the bank actually emits per row.
     CREATE TABLE IF NOT EXISTS transactions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       institution TEXT NOT NULL,
@@ -225,12 +228,14 @@ function initDb() {
       balance_after REAL,
       status TEXT DEFAULT 'posted',
       raw TEXT,
-      dedup_key TEXT NOT NULL UNIQUE,
       created_at TEXT DEFAULT (datetime('now')),
-      updated_at TEXT DEFAULT (datetime('now'))
+      updated_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(institution, account_id, date, amount, description)
     );
 
     -- Investment transactions: trades, dividends, contributions
+    -- Symbol included in natural key because two same-amount/date trades on different
+    -- symbols are distinct events.
     CREATE TABLE IF NOT EXISTS investment_transactions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       institution TEXT NOT NULL,
@@ -244,9 +249,9 @@ function initDb() {
       amount REAL NOT NULL,
       fees REAL DEFAULT 0,
       raw TEXT,
-      dedup_key TEXT NOT NULL UNIQUE,
       created_at TEXT DEFAULT (datetime('now')),
-      updated_at TEXT DEFAULT (datetime('now'))
+      updated_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(institution, account_id, date, amount, description, symbol)
     );
 
     -- Holdings snapshots: positions per account per sync
@@ -403,17 +408,12 @@ function normalizeDayToDay(institution, accountId, accountType, raw) {
   }
   if (isNaN(balanceAfter)) balanceAfter = null;
 
-  // Dedup key — prefer raw transaction ID (stable across pending→posted date shifts),
-  // fall back to date+amount+desc hash for CSV sources without IDs
-  const rawId = r.id || r.transactionId || r.transaction_id || r.referenceNumber || null;
-  let dedupKey;
-  if (rawId) {
-    dedupKey = `${institution}|${accountId}|${rawId}`;
-  } else {
-    const dedupDate = transactionDate || date;
-    const descHash = crypto.createHash('md5').update(description.substring(0, 50)).digest('hex').substring(0, 8);
-    dedupKey = `${institution}|${accountId}|${dedupDate}|${amount}|${descHash}`;
-  }
+  // Status: trust the bank's signal when present (Mercury exports `status: pending`/`sent`).
+  // Otherwise default to 'posted' — the absence of a posting date does NOT mean pending,
+  // since some institutions (e.g. Capital One savings) simply don't expose that column.
+  const rawStatus = resolveField(mapping, 'status', r, 'status');
+  let status = 'posted';
+  if (rawStatus && /pend/i.test(String(rawStatus))) status = 'pending';
 
   return {
     table: 'transactions',
@@ -430,9 +430,8 @@ function normalizeDayToDay(institution, accountId, accountType, raw) {
       type,
       category,
       balance_after: balanceAfter,
-      status: postingDate ? 'posted' : 'pending',
+      status,
       raw: JSON.stringify(raw),
-      dedup_key: dedupKey,
     },
   };
 }
@@ -475,14 +474,10 @@ function normalizeInvestmentTransaction(institution, accountId, raw) {
     'Price', 'price');
   if (typeof price === 'string') price = parseFloat(price.replace(/[$,]/g, ''));
 
-  const rawId = r.id || r.transactionId || r.transaction_id || r.activityId || r.referenceNumber || null;
-  let dedupKey;
-  if (rawId) {
-    dedupKey = `${institution}|${accountId}|${rawId}`;
-  } else {
-    const descHash = crypto.createHash('md5').update(description.substring(0, 50)).digest('hex').substring(0, 8);
-    dedupKey = `${institution}|${accountId}|${date}|${amount}|${descHash}`;
-  }
+  // Coerce symbol to empty string (never null) so the natural UNIQUE key works.
+  // SQLite treats NULL values in UNIQUE constraints as distinct (NULL ≠ NULL),
+  // which would let dividends/cash entries with no symbol bypass dedup.
+  const symbolKey = symbol == null ? '' : String(symbol);
 
   return {
     table: 'investment_transactions',
@@ -492,13 +487,12 @@ function normalizeInvestmentTransaction(institution, accountId, raw) {
       date,
       description: description.trim(),
       type,
-      symbol,
+      symbol: symbolKey,
       quantity,
       price,
       amount,
       fees: 0,
       raw: JSON.stringify(raw),
-      dedup_key: dedupKey,
     },
   };
 }
@@ -565,22 +559,27 @@ function importInstitution(db, institution, data) {
     balancesImported++;
   }
 
-  // Import transactions
+  // Import transactions — natural-key UPSERT.
+  // ON CONFLICT references the natural UNIQUE(institution, account_id, date, amount, description).
+  // When a re-sync hits an existing row, refresh posting_date/status/balance_after if the new
+  // import has them; preserve existing values otherwise.
   const insertTxn = db.prepare(`
-    INSERT INTO transactions (institution, account_id, account_type, transaction_date, posting_date, date, description, amount, currency, type, category, balance_after, status, raw, dedup_key)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(dedup_key) DO UPDATE SET
+    INSERT INTO transactions (institution, account_id, account_type, transaction_date, posting_date, date, description, amount, currency, type, category, balance_after, status, raw)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(institution, account_id, date, amount, description) DO UPDATE SET
       posting_date = COALESCE(excluded.posting_date, posting_date),
-      date = COALESCE(excluded.posting_date, excluded.date, date),
-      status = CASE WHEN excluded.posting_date IS NOT NULL THEN 'posted' ELSE status END,
+      transaction_date = COALESCE(excluded.transaction_date, transaction_date),
+      status = excluded.status,
       balance_after = COALESCE(excluded.balance_after, balance_after),
+      raw = excluded.raw,
       updated_at = datetime('now')
   `);
 
   const insertInvTxn = db.prepare(`
-    INSERT INTO investment_transactions (institution, account_id, date, description, type, symbol, quantity, price, amount, fees, raw, dedup_key)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(dedup_key) DO UPDATE SET
+    INSERT INTO investment_transactions (institution, account_id, date, description, type, symbol, quantity, price, amount, fees, raw)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(institution, account_id, date, amount, description, symbol) DO UPDATE SET
+      raw = excluded.raw,
       updated_at = datetime('now')
   `);
 
@@ -611,11 +610,11 @@ function importInstitution(db, institution, data) {
       if (normalized.table === 'transactions') {
         const r = normalized.row;
         insertTxn.run(r.institution, r.account_id, r.account_type, r.transaction_date, r.posting_date,
-          r.date, r.description, r.amount, r.currency, r.type, r.category, r.balance_after, r.status, r.raw, r.dedup_key);
+          r.date, r.description, r.amount, r.currency, r.type, r.category, r.balance_after, r.status, r.raw);
       } else {
         const r = normalized.row;
         insertInvTxn.run(r.institution, r.account_id, r.date, r.description,
-          r.type, r.symbol, r.quantity, r.price, r.amount, r.fees, r.raw, r.dedup_key);
+          r.type, r.symbol, r.quantity, r.price, r.amount, r.fees, r.raw);
       }
       txnsImported++;
     } catch (e) {
