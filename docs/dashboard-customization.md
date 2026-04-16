@@ -275,7 +275,7 @@ Tracks total spending across accounts, filtered by scope criteria. Scope filters
 |-----------|--------|---------|
 | `account_type` | All accounts of a type | `"credit"`, `"checking"` |
 | `institution` | All accounts from an institution | `"chase"` (matches by `account_id` prefix) |
-| `accounts` | Explicit account ID list | `["chase-credit-sapphire-5501", "apple-card-credit"]` |
+| `accounts` | Explicit account ID list | `["chase-credit-1234", "apple-card-credit"]` |
 | `categories` | Only count these categories (whitelist) | `["Restaurants", "Shopping"]` |
 | `exclude_categories` | Count everything except these (blacklist) | `["Subscription", "Transfer"]` |
 
