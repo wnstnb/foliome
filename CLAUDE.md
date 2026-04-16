@@ -191,7 +191,7 @@ Config-driven Playwright module (`readers/browser-reader.js`). Each institution 
 - **Subsequent runs:** Incremental — from last known transaction date to today
 - **CSV parsing is schema-agnostic:** Raw bank columns preserved as-is in JSON output. Each bank has different schemas — all captured faithfully.
 - **PDF parsing:** LiteParse extracts layout-aware text (with Tesseract.js OCR fallback for scanned pages) → raw text saved as `pendingExtraction` → agent extracts structured transactions (amounts as-shown, no sign interpretation — `import.js` normalizes).
-- **Dedup (Layer 2):** Key = `institution + account_id + raw_transaction_id` when the source provides a stable ID (API connectors), falling back to `institution + account_id + date + amount + description_hash` for CSV sources. ID-based dedup prevents duplicates from pending→posted date shifts. Pending transactions update to posted status via upsert.
+- **Dedup (Layer 2):** Natural-key UNIQUE on `(institution, account_id, date, amount, description)` for transactions, plus `symbol` for investment transactions. No synthetic hash column — derived state in the schema is fragile (changing the formula invalidates every historical row). The natural key is stable across re-syncs because date/amount/description are what the bank actually emits per row. On re-sync, the UPSERT refreshes posting_date/status/balance_after/raw; existing values are preserved when the new import omits them. If you have an existing DB with the legacy `dedup_key` column, run `node scripts/migrate-dedup-natural-key.js` once to migrate.
 
 ## Data Semantics & Normalization
 
