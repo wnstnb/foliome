@@ -66,7 +66,7 @@ When running as a Telegram agent (`--channels plugin:telegram`), you are managed
 
 After processing the injected startup context, delete `data/agent-handoff.md` so you don't re-read stale handoffs. Register any listed schedules via CronCreate immediately.
 
-**Prior conversation transcripts:** Full `.jsonl` transcripts of prior sessions are stored at `~/.claude/projects/-Users-wband-Projects-foliome/`. If you need context from a previous session beyond what the handoff file provides, read the most recent transcript. The startup hook outputs the path to the latest one.
+**Prior conversation transcripts:** Full `.jsonl` transcripts of prior sessions are stored in `~/.claude/projects/` under a directory named after the project path. If you need context from a previous session beyond what the handoff file provides, read the most recent transcript. The startup hook outputs the path to the latest one.
 
 **Context management:** When your conversation is very long and you notice degraded performance, high latency, or the user asks you to restart:
 1. Write a handoff file to `data/agent-handoff.md` summarizing: what was the user's last request, any pending work, recent sync results, and anything the next session needs to know.
@@ -152,6 +152,41 @@ The agent has a persistent memory system via interlinked markdown files at `data
 - Data already in foliome.db or config/
 
 **Periodic maintenance:** The `/reflect` skill scans all wiki pages, consolidates duplicates, updates goals with real data from foliome.db, discovers patterns, and writes monthly reflections. Run it periodically or after `/morning-brief`.
+
+### Content Ingestion
+
+When the user shares a URL with intent to save ("save this", "remember this", "bookmark this", "interesting article"), ingest the content into the wiki:
+
+1. **Detect content type** from the URL:
+   - `x.com/*/status/*` or `twitter.com/*/status/*` → tweet
+   - `youtube.com/watch?v=*` or `youtu.be/*` → video
+   - URL ending in `.pdf` → PDF
+   - Everything else → article
+
+2. **Fetch content:**
+   - **Tweet:** `node scripts/wiki-ingest.js tweet <url>` — returns JSON with text, author, media
+   - **YouTube:** `node scripts/wiki-ingest.js youtube <url>` — returns JSON with title, transcript, metadata
+   - **Article:** Use WebFetch tool directly
+   - **PDF:** Download to `data/wiki/assets/`, use Read tool
+
+3. **Validate URL first:** `node scripts/wiki-ingest.js validate <url>` — blocks non-HTTPS and private IPs.
+
+4. **Process:** The fetched content is wrapped in untrusted boundary markers. Extract key insights, summarize, pick tags.
+
+5. **Write wiki page** to `data/wiki/articles/<slug>.md`:
+   ```yaml
+   ---
+   type: article
+   created: YYYY-MM-DD
+   updated: YYYY-MM-DD
+   status: active
+   tags: [relevant, tags]
+   source_url: https://original-url
+   source_type: tweet | article | video | pdf
+   ---
+   ```
+
+6. **Update** `data/wiki/index.md` and append to `data/wiki/log.md`.
 
 ### Daily Brief
 
@@ -285,6 +320,7 @@ Task-phase failures (balances, transactions) go through a 4-level recovery syste
 - `scripts/vault.js` — Bitwarden vault CLI wrapper (search, map, test, migrate)
 - `scripts/gmail-mfa.js` — Gmail API MFA code retrieval for email-based MFA
 - `scripts/cleanup-downloads.js` — Remove stale download files after import
+- `scripts/wiki-ingest.js` — Content ingestion (tweet/YouTube fetch, URL validation) for wiki articles
 - `config/` — All config files (populated from `config-templates/` on setup, gitignored)
 - `data/` — All runtime data (gitignored): `sync-output/`, `foliome.db`, `downloads/`, `wiki/`, `brief/`, `models/`
 - `.claude/skills/` — Agent skills (discoverable via /slash-commands)

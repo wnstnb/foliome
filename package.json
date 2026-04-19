@@ -23,6 +23,9 @@
     "node-telegram-bot-api": "^0.67.0",
     "playwright": "^1.58.2"
   },
+  "optionalDependencies": {
+    "sharp": "^0.33.5"
+  },
   "overrides": {
     "axios": "1.13.6"
   }
