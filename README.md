@@ -194,6 +194,7 @@ connectors/                     API integrations (no browser)
 sync-engine/                    Layer 2 persistence
   import.js                     JSON --> SQLite with normalization + dedup
   classify.js                   Transaction classifier (account-type → rules → model → bank fallback)
+  parse-symbol.js               Options contract and investment symbol parser
   security-gate.js              Domain + HTTPS verification
 dashboard/                      React SPA (Vite + TypeScript + Tailwind + shadcn)
   src/tabs/                     Brief, Overview, Transactions, Budget, Portfolio, Subscriptions, Wiki
