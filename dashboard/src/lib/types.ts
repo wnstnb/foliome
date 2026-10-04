@@ -80,6 +80,7 @@ export interface Subscription {
   avg_amount: number;
   last_charged: string;
   total: number;
+  recurring: boolean;
 }
 
 export interface HealthMonth {
@@ -198,6 +199,7 @@ export interface HoldingsData {
 export interface SubscriptionsData {
   subscriptions: Subscription[];
   monthlyTotal: number;
+  oneTimeTotal: number;
   annualTotal: number;
 }
 
@@ -224,14 +226,26 @@ export interface BudgetsData {
 // ─── Wiki ───
 
 export interface WikiPageMeta {
+  slug: string;
   path: string;
   title: string;
+  short: string;
   type: string;
+  status: string;
+  topic: string;
   created: string;
   updated: string;
-  status: string;
   tags: string[];
+  sources: string[];
+  headline: string;
+  superseded_by: string;
+  lead: string;
   summary: string;
+  open: string[];
+  linkCount: number;
+  progress: number | null;
+  on_track: boolean | null;
+  fromStatement: boolean;
   source_url?: string;
   source_type?: string;
 }
@@ -239,10 +253,28 @@ export interface WikiPageMeta {
 export interface WikiIndexData {
   groups: { type: string; label: string; pages: WikiPageMeta[] }[];
   totalPages: number;
+  home: {
+    goals: WikiPageMeta[];
+    rules: WikiPageMeta[];
+    open: { text: string; page: string; pageTitle: string }[];
+    recent: { date: string; text: string }[];
+  };
+  health: { brokenLinks: number; missingFields: number; oneWayLinks: number };
+}
+
+export interface WikiRelated {
+  path: string;
+  title: string;
+  type: string;
+  status: string;
+  direction: 'both' | 'out' | 'in';
 }
 
 export interface WikiPageData {
   frontmatter: Record<string, unknown>;
   body: string;
   title: string;
+  meta: WikiPageMeta;
+  related: WikiRelated[];
+  supersededBy: { path: string; title: string } | null;
 }

@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { isTelegram, getTg, tgReady } from '@/lib/telegram';
 import { setSessionToken } from '@/lib/api';
+import { inPortal } from '@/lib/portal';
 
 type AuthState = 'loading' | 'authenticated' | 'error';
 
@@ -29,6 +30,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setState('authenticated');
           return;
         }
+      }
+
+      // Portal mode: the reverse proxy authenticates every request (X-Portal-Auth
+      // header / portal_session cookie), so skip the Telegram initData handshake —
+      // API calls authorize via the cookie.
+      if (inPortal()) {
+        setState('authenticated');
+        return;
       }
 
       if (!isTelegram()) {

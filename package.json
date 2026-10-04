@@ -9,7 +9,8 @@
     "dashboard:dev": "cd dashboard && npm run dev",
     "dashboard:build": "cd dashboard && npm run build",
     "dashboard:serve": "node scripts/dashboard-server.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "test:pfs": "node scripts/pfs/demo/test.js"
   },
   "keywords": [],
   "author": "",
@@ -24,7 +25,8 @@
     "playwright": "^1.58.2"
   },
   "optionalDependencies": {
-    "sharp": "^0.33.5"
+    "sharp": "^0.33.5",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "overrides": {
     "axios": "1.13.6"

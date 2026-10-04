@@ -71,6 +71,55 @@ function normalizeAmountSign(amount, institution, raw, semantics) {
   return amount;
 }
 
+// ============================================================================
+// Transaction Identity Resolution
+// ============================================================================
+//
+// Four layers prevent duplicate transactions:
+//
+//   Layer 1 — Stable Bank ID (existing): API sources (e.g. a bank REST API) provide a
+//   bank-assigned UUID. Stored in bank_transaction_id, used for pending→posted
+//   dedup. Configured via stableIdField in data-semantics.json.
+//
+//   Layer 2 — Description Normalization (new): Chase and other CSV banks emit
+//   the same transaction with different description formats across syncs (e.g.,
+//   verbose ACH headers on day 1, condensed form on day 2). Regex rules in
+//   data-semantics.json normalize descriptions to a canonical form BEFORE
+//   insert, so the UNIQUE constraint catches them as identical.
+//
+//   Layer 3 — Natural Key UNIQUE constraint (existing): The (institution,
+//   account_id, date, amount, description) constraint catches exact re-imports.
+//
+//   Layer 4 — Post-import Reconciliation (new): For duplicates that already
+//   exist in the database (from before normalization was added), find rows
+//   sharing (institution, account_id, date, amount) with different descriptions
+//   but the same embedded transaction ID, and merge them.
+// ============================================================================
+
+/**
+ * Layer 2: Normalize a transaction description using per-institution regex rules.
+ * Applies descriptionNormalization rules from data-semantics.json in order.
+ * Returns the original description unchanged if no rules exist for the institution.
+ */
+function normalizeDescription(institution, description, semanticsData) {
+  const rules = semanticsData?.institutions?.[institution]?.descriptionNormalization;
+  if (!rules || !Array.isArray(rules) || rules.length === 0) return description;
+
+  let result = description;
+  for (const rule of rules) {
+    try {
+      const regex = new RegExp(rule.match, 'i');
+      result = result.replace(regex, rule.replace);
+    } catch (e) {
+      console.warn(`[import] Bad normalization regex for ${institution}: ${rule.match} — ${e.message}`);
+    }
+  }
+
+  // Collapse whitespace and trim
+  result = result.replace(/\s+/g, ' ').trim();
+  return result;
+}
+
 /**
  * Resolve a field from raw data using column mapping, with fallback chain.
  * mapping: the institution's columnMapping or investmentColumnMapping object
@@ -182,6 +231,76 @@ const semantics = loadSemantics();
 
 // === Database Setup ===
 
+/**
+ * One-time cleanup: find transactions that share the same bank_transaction_id
+ * (extracted from raw JSON) but have different dates — a pending→posted duplicate.
+ * Keep the posted row (or the newer one), delete the other.
+ * Also backfill bank_transaction_id from raw JSON for institutions with stableIdField.
+ */
+function _cleanupPendingPostedDuplicates(db) {
+  if (!semantics) return;
+
+  // Collect institutions that have a stableIdField
+  const stableInstitutions = [];
+  for (const [inst, cfg] of Object.entries(semantics.institutions || {})) {
+    if (cfg.stableIdField) stableInstitutions.push({ institution: inst, field: cfg.stableIdField });
+  }
+  if (stableInstitutions.length === 0) return;
+
+  for (const { institution, field } of stableInstitutions) {
+    // Backfill bank_transaction_id from raw JSON where it's NULL
+    const rows = db.prepare(
+      `SELECT id, raw FROM transactions WHERE institution = ? AND bank_transaction_id IS NULL AND raw IS NOT NULL`
+    ).all(institution);
+
+    let backfilled = 0;
+    const updateBankId = db.prepare(`UPDATE transactions SET bank_transaction_id = ? WHERE id = ?`);
+    for (const row of rows) {
+      try {
+        const rawData = JSON.parse(row.raw);
+        const bankId = rawData[field];
+        if (bankId) {
+          updateBankId.run(String(bankId), row.id);
+          backfilled++;
+        }
+      } catch {}
+    }
+    if (backfilled > 0) {
+      console.log(`[import] Backfilled bank_transaction_id for ${backfilled} ${institution} transactions`);
+    }
+
+    // Find and remove duplicates: same bank_transaction_id, different rows
+    const dupes = db.prepare(`
+      SELECT bank_transaction_id, COUNT(*) as cnt
+      FROM transactions
+      WHERE institution = ? AND bank_transaction_id IS NOT NULL
+      GROUP BY bank_transaction_id
+      HAVING cnt > 1
+    `).all(institution);
+
+    let cleaned = 0;
+    for (const { bank_transaction_id } of dupes) {
+      // Get all rows for this bank ID, prefer posted over pending, then newest date
+      const dupRows = db.prepare(`
+        SELECT id, status, date FROM transactions
+        WHERE institution = ? AND bank_transaction_id = ?
+        ORDER BY
+          CASE WHEN status = 'posted' THEN 0 ELSE 1 END,
+          date DESC
+      `).all(institution, bank_transaction_id);
+
+      // Keep the first (posted/newest), delete the rest
+      for (let i = 1; i < dupRows.length; i++) {
+        db.prepare(`DELETE FROM transactions WHERE id = ?`).run(dupRows[i].id);
+        cleaned++;
+      }
+    }
+    if (cleaned > 0) {
+      console.log(`[import] Cleaned up ${cleaned} pending→posted duplicate(s) for ${institution}`);
+    }
+  }
+}
+
 function initDb() {
   const dir = path.dirname(DB_PATH);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -205,10 +324,12 @@ function initDb() {
     );
 
     -- Day-to-day transactions: checking, savings, credit cards, mortgage payments
-    -- Natural-key UNIQUE on (institution, account_id, date, amount, description).
-    -- No synthetic dedup_key — derived state in the schema is fragile (any change in the
-    -- formula invalidates every historical row). The natural key is stable across re-syncs
-    -- because date/amount/description are what the bank actually emits per row.
+    -- Two dedup strategies:
+    --   1. bank_transaction_id (API sources): stable bank-assigned ID survives date shifts
+    --      (pending→posted). import.js checks for existing row by bank ID before inserting.
+    --   2. Natural-key UNIQUE on (institution, account_id, date, amount, description):
+    --      fallback for CSV sources. Stable across re-syncs because date/amount/description
+    --      are what the bank actually emits per row.
     CREATE TABLE IF NOT EXISTS transactions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       institution TEXT NOT NULL,
@@ -329,6 +450,21 @@ function initDb() {
   // Create index after migration ensures column exists
   db.exec(`CREATE INDEX IF NOT EXISTS idx_holdings_underlying ON holdings(underlying, synced_at)`);
 
+  // Migrate: add bank_transaction_id column for API-source dedup (nullable — CSV sources won't have it)
+  // When a bank provides a stable ID (e.g., an API connector's transaction UUID), pending→posted date shifts no longer
+  // create duplicates — we find the existing row by bank_transaction_id and UPDATE it.
+  try { db.exec(`ALTER TABLE transactions ADD COLUMN bank_transaction_id TEXT`); } catch {}
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_transactions_bank_txn_id ON transactions(institution, bank_transaction_id)`);
+
+  // One-time cleanup: deduplicate pending→posted rows that slipped through before bank_transaction_id existed.
+  // For each pair sharing the same bank ID (embedded in raw JSON), keep the posted row and delete the pending one.
+  _cleanupPendingPostedDuplicates(db);
+
+  // One-time cleanup: normalize existing descriptions and reconcile duplicates.
+  // Applies Layer 2 (description normalization) and Layer 4 (reconciliation) to
+  // historical data. Idempotent — subsequent runs find nothing to change.
+  _normalizeExistingDescriptions(db);
+
   return db;
 }
 
@@ -375,10 +511,31 @@ function normalizeDayToDay(institution, accountId, accountType, raw) {
   if (!date) return null;
 
   // Description
-  const description = resolveField(mapping, 'description', r,
+  let description = resolveField(mapping, 'description', r,
     'Description', 'Transaction Description', 'description',
     'Merchant', 'bankDescription', 'counterpartyName', 'note');
   if (!description) return null;
+
+  // Layer 2: Apply per-institution description normalization rules from data-semantics.json.
+  // This handles format variations like Chase ACH detail vs condensed descriptions.
+  // Rules are applied BEFORE any other normalization so the regex patterns match raw input.
+  description = normalizeDescription(institution, description, semantics);
+
+  // Chase checking: additional hardcoded normalizations beyond what regex rules handle.
+  // These are structural patterns (case, inline numbers, masked accounts) that apply
+  // broadly and aren't well-suited to individual regex rules.
+  if (institution === 'chase' && accountType === 'checking') {
+    // Normalize whitespace
+    description = description.replace(/\s+/g, ' ').trim();
+    // Normalize case to lowercase for dedup (original preserved in raw JSON)
+    description = description.toLowerCase();
+    // Strip inline transaction numbers from transfers: "online transfer 28476066877 to" → "online transfer to"
+    description = description.replace(/online transfer \d+ to/i, 'online transfer to');
+    // Normalize "transaction #: 12345" vs "transaction#:12345 MM/DD"
+    description = description.replace(/transaction\s*#?\s*:?\s*\d+\s*\d{0,2}\/?\d{0,2}/, 'transaction');
+    // Normalize masked account numbers: "#######1234" vs "xxxxxxx1234"
+    description = description.replace(/[#x]{4,}\d{4}/gi, m => '****' + m.slice(-4));
+  }
 
   // Amount
   let amount = resolveField(mapping, 'amount', r,
@@ -408,12 +565,17 @@ function normalizeDayToDay(institution, accountId, accountType, raw) {
   }
   if (isNaN(balanceAfter)) balanceAfter = null;
 
-  // Status: trust the bank's signal when present (Mercury exports `status: pending`/`sent`).
+  // Status: trust the bank's signal when present (some API exports carry `status: pending`/`sent`).
   // Otherwise default to 'posted' — the absence of a posting date does NOT mean pending,
-  // since some institutions (e.g. Capital One savings) simply don't expose that column.
+  // since some institutions (Capital One savings) simply don't expose that column.
   const rawStatus = resolveField(mapping, 'status', r, 'status');
   let status = 'posted';
   if (rawStatus && /pend/i.test(String(rawStatus))) status = 'pending';
+
+  // Bank-provided stable transaction ID (API sources only).
+  // Used for dedup when date shifts between pending→posted.
+  const stableIdField = semantics?.institutions?.[institution]?.stableIdField;
+  const bankTransactionId = stableIdField ? (r[stableIdField] || null) : null;
 
   return {
     table: 'transactions',
@@ -431,6 +593,7 @@ function normalizeDayToDay(institution, accountId, accountType, raw) {
       category,
       balance_after: balanceAfter,
       status,
+      bank_transaction_id: bankTransactionId ? String(bankTransactionId) : null,
       raw: JSON.stringify(raw),
     },
   };
@@ -559,18 +722,46 @@ function importInstitution(db, institution, data) {
     balancesImported++;
   }
 
-  // Import transactions — natural-key UPSERT.
-  // ON CONFLICT references the natural UNIQUE(institution, account_id, date, amount, description).
-  // When a re-sync hits an existing row, refresh posting_date/status/balance_after if the new
-  // import has them; preserve existing values otherwise.
+  // Import transactions — two dedup strategies:
+  //
+  // 1. Bank-ID dedup (API sources): When the bank provides a stable transaction ID
+  //    (e.g., an API transaction UUID), check for an existing row with that ID first. If found,
+  //    UPDATE it — this handles pending→posted date shifts without creating duplicates.
+  //
+  // 2. Natural-key UPSERT (all sources): Falls through to the UNIQUE constraint on
+  //    (institution, account_id, date, amount, description). Handles re-syncs of the
+  //    same data gracefully.
+  const updateByBankId = db.prepare(`
+    UPDATE transactions SET
+      account_type = ?,
+      transaction_date = COALESCE(?, transaction_date),
+      posting_date = COALESCE(?, posting_date),
+      date = ?,
+      description = ?,
+      amount = ?,
+      currency = ?,
+      type = ?,
+      category = ?,
+      balance_after = COALESCE(?, balance_after),
+      status = ?,
+      raw = ?,
+      updated_at = datetime('now')
+    WHERE institution = ? AND bank_transaction_id = ?
+  `);
+
+  const findByBankId = db.prepare(
+    `SELECT id FROM transactions WHERE institution = ? AND bank_transaction_id = ?`
+  );
+
   const insertTxn = db.prepare(`
-    INSERT INTO transactions (institution, account_id, account_type, transaction_date, posting_date, date, description, amount, currency, type, category, balance_after, status, raw)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO transactions (institution, account_id, account_type, transaction_date, posting_date, date, description, amount, currency, type, category, balance_after, status, bank_transaction_id, raw)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(institution, account_id, date, amount, description) DO UPDATE SET
       posting_date = COALESCE(excluded.posting_date, posting_date),
       transaction_date = COALESCE(excluded.transaction_date, transaction_date),
       status = excluded.status,
       balance_after = COALESCE(excluded.balance_after, balance_after),
+      bank_transaction_id = COALESCE(excluded.bank_transaction_id, bank_transaction_id),
       raw = excluded.raw,
       updated_at = datetime('now')
   `);
@@ -609,8 +800,28 @@ function importInstitution(db, institution, data) {
     try {
       if (normalized.table === 'transactions') {
         const r = normalized.row;
-        insertTxn.run(r.institution, r.account_id, r.account_type, r.transaction_date, r.posting_date,
-          r.date, r.description, r.amount, r.currency, r.type, r.category, r.balance_after, r.status, r.raw);
+
+        // Strategy 1: Bank-ID dedup — if we have a stable bank ID, check for existing row
+        let handledByBankId = false;
+        if (r.bank_transaction_id) {
+          const existing = findByBankId.get(r.institution, r.bank_transaction_id);
+          if (existing) {
+            // UPDATE the existing row — date/status/description may have changed (pending→posted)
+            updateByBankId.run(
+              r.account_type, r.transaction_date, r.posting_date, r.date, r.description,
+              r.amount, r.currency, r.type, r.category, r.balance_after, r.status, r.raw,
+              r.institution, r.bank_transaction_id
+            );
+            handledByBankId = true;
+          }
+        }
+
+        // Strategy 2: Natural-key INSERT/UPSERT (new row, or CSV-source dedup)
+        if (!handledByBankId) {
+          insertTxn.run(r.institution, r.account_id, r.account_type, r.transaction_date, r.posting_date,
+            r.date, r.description, r.amount, r.currency, r.type, r.category, r.balance_after, r.status,
+            r.bank_transaction_id, r.raw);
+        }
       } else {
         const r = normalized.row;
         insertInvTxn.run(r.institution, r.account_id, r.date, r.description,
@@ -753,7 +964,263 @@ function importInstitution(db, institution, data) {
   return { balancesImported, txnsImported, txnsSkipped, holdingsImported };
 }
 
+// === Layer 4: Post-import Reconciliation ===
+
+/**
+ * Extract all ID-like tokens from a transaction description.
+ * Matches patterns like "id: 1390989781", "web id: paypalsi77", "orig id:3264681992".
+ * Returns a Set of lowercase ID values.
+ */
+function extractTransactionIds(description) {
+  const ids = new Set();
+  // Match "id:", "orig id:", "web id:", etc. followed by an alphanumeric token
+  const idPattern = /(?:orig id|web id|ind id|id)\s*:?\s*(\S+)/gi;
+  let m;
+  while ((m = idPattern.exec(description)) !== null) {
+    ids.add(m[1].toLowerCase());
+  }
+  return ids;
+}
+
+/**
+ * Layer 4: Post-import reconciliation — find and merge duplicate transactions
+ * that slipped through before description normalization was added.
+ *
+ * Strategy: For each pair of rows sharing (institution, account_id, date, amount)
+ * but with different descriptions, check if they share an embedded transaction ID.
+ * If yes, they're the same transaction in two description formats — keep the cleaner
+ * one (shorter description, or posted over pending) and delete the other.
+ *
+ * Safety: Pairs with no shared ID are skipped (e.g., two different $25 purchases
+ * on the same day, or two Amazon orders with the same amount).
+ */
+function reconcileDuplicates(db) {
+  // Find all potential duplicate groups: same (institution, account_id, date, amount), 2+ rows
+  const groups = db.prepare(`
+    SELECT institution, account_id, date, amount, COUNT(*) as cnt
+    FROM transactions
+    GROUP BY institution, account_id, date, amount
+    HAVING cnt > 1
+  `).all();
+
+  if (groups.length === 0) return 0;
+
+  let totalCleaned = 0;
+
+  for (const group of groups) {
+    const rows = db.prepare(`
+      SELECT id, description, status, created_at
+      FROM transactions
+      WHERE institution = ? AND account_id = ? AND date = ? AND amount = ?
+      ORDER BY created_at DESC
+    `).all(group.institution, group.account_id, group.date, group.amount);
+
+    // Compare every pair in the group
+    const toDelete = new Set();
+    for (let i = 0; i < rows.length; i++) {
+      if (toDelete.has(rows[i].id)) continue;
+      for (let j = i + 1; j < rows.length; j++) {
+        if (toDelete.has(rows[j].id)) continue;
+        // If descriptions are identical after normalization, they'd be caught by UNIQUE — skip
+        if (rows[i].description === rows[j].description) continue;
+
+        // Extract IDs from both descriptions
+        const ids1 = extractTransactionIds(rows[i].description);
+        const ids2 = extractTransactionIds(rows[j].description);
+
+        // No IDs in either description — can't confirm they're the same transaction
+        if (ids1.size === 0 && ids2.size === 0) continue;
+
+        // Check for shared IDs
+        let hasSharedId = false;
+        for (const id of ids1) {
+          if (ids2.has(id)) { hasSharedId = true; break; }
+        }
+        if (!hasSharedId) continue;
+
+        // High confidence: same date+amount+account AND shared transaction ID.
+        // Keep the better row: prefer posted over pending, then shorter description
+        // (the condensed form is more readable), then newer created_at.
+        let keep, remove;
+        if (rows[i].status === 'posted' && rows[j].status !== 'posted') {
+          keep = rows[i]; remove = rows[j];
+        } else if (rows[j].status === 'posted' && rows[i].status !== 'posted') {
+          keep = rows[j]; remove = rows[i];
+        } else if (rows[i].description.length <= rows[j].description.length) {
+          keep = rows[i]; remove = rows[j];
+        } else {
+          keep = rows[j]; remove = rows[i];
+        }
+
+        toDelete.add(remove.id);
+        console.log(`[reconcile] Merging duplicate: ${group.institution} ${group.date} $${group.amount}`);
+        console.log(`[reconcile]   KEEP  (id=${keep.id}): ${keep.description.substring(0, 80)}`);
+        console.log(`[reconcile]   DELETE(id=${remove.id}): ${remove.description.substring(0, 80)}`);
+      }
+    }
+
+    if (toDelete.size > 0) {
+      const deleteStmt = db.prepare(`DELETE FROM transactions WHERE id = ?`);
+      for (const id of toDelete) {
+        deleteStmt.run(id);
+      }
+      totalCleaned += toDelete.size;
+    }
+  }
+
+  return totalCleaned;
+}
+
+/**
+ * One-time cleanup: Apply description normalization to existing Chase transactions
+ * and remove duplicates that become identical after normalization.
+ *
+ * This runs during initDb() (idempotent — harmless on subsequent runs since
+ * descriptions will already be normalized).
+ */
+function _normalizeExistingDescriptions(db) {
+  if (!semantics) return;
+
+  // Find institutions with descriptionNormalization rules
+  for (const [institution, cfg] of Object.entries(semantics.institutions || {})) {
+    if (!cfg.descriptionNormalization || cfg.descriptionNormalization.length === 0) continue;
+
+    // Fetch raw JSON too — descriptions may have been mangled by a previous normalization
+    // pass (e.g., old hardcoded regex captured IND ID content into the description body).
+    // Re-normalizing from the original raw Description field produces the correct result.
+    const mapping = cfg.columnMapping || null;
+    const rows = db.prepare(
+      `SELECT id, description, account_type, raw FROM transactions WHERE institution = ?`
+    ).all(institution);
+
+    if (rows.length === 0) continue;
+
+    const updateDesc = db.prepare(`UPDATE transactions SET description = ?, updated_at = datetime('now') WHERE id = ?`);
+    const deleteById = db.prepare(`DELETE FROM transactions WHERE id = ?`);
+    let updated = 0;
+    let collisionDeleted = 0;
+
+    for (const row of rows) {
+      // Start from the raw description when available — it preserves the original bank format
+      // before any previous normalization attempts. Fall back to stored description.
+      let sourceDesc = row.description;
+      if (row.raw) {
+        try {
+          const rawData = JSON.parse(row.raw);
+          const rawDesc = resolveField(mapping, 'description', rawData,
+            'Description', 'Transaction Description', 'description',
+            'Merchant', 'bankDescription', 'counterpartyName', 'note');
+          if (rawDesc) sourceDesc = rawDesc;
+        } catch {}
+      }
+
+      // Apply the regex rules from data-semantics.json
+      let normalized = normalizeDescription(institution, sourceDesc, semantics);
+
+      // Apply the same hardcoded normalizations that normalizeDayToDay uses
+      if (institution === 'chase' && (row.account_type === 'checking')) {
+        normalized = normalized.replace(/\s+/g, ' ').trim();
+        normalized = normalized.toLowerCase();
+        normalized = normalized.replace(/online transfer \d+ to/i, 'online transfer to');
+        normalized = normalized.replace(/transaction\s*#?\s*:?\s*\d+\s*\d{0,2}\/?\d{0,2}/, 'transaction');
+        normalized = normalized.replace(/[#x]{4,}\d{4}/gi, m => '****' + m.slice(-4));
+      }
+
+      if (normalized !== row.description) {
+        try {
+          updateDesc.run(normalized, row.id);
+          updated++;
+        } catch (e) {
+          if (e.message.includes('UNIQUE constraint')) {
+            // The normalized description already exists as another row in the same
+            // (institution, account_id, date, amount) group — this row is the duplicate.
+            // Delete it instead of updating.
+            deleteById.run(row.id);
+            collisionDeleted++;
+          } else {
+            throw e;
+          }
+        }
+      }
+    }
+
+    if (updated > 0) {
+      console.log(`[import] Normalized ${updated} ${institution} transaction descriptions`);
+    }
+    if (collisionDeleted > 0) {
+      console.log(`[import] Removed ${collisionDeleted} ${institution} duplicates (normalized description collided with existing row)`);
+    }
+  }
+
+  // Layer 4: Reconcile remaining duplicates with different descriptions but shared IDs
+  const reconciled = reconcileDuplicates(db);
+  if (reconciled > 0) {
+    console.log(`[import] Reconciled ${reconciled} duplicate transaction(s) via shared transaction IDs`);
+  }
+}
+
 // === Main ===
+
+// Detect an institution's account list silently shrinking.
+//
+// Some providers simply omit accounts rather than reporting them at zero — Schwab drops
+// zero-balance accounts. When that happens the account disappears from every subsequent
+// sync and NOTHING else notices: balance counts still look healthy, sync_status still
+// reads ok, and the missing account contributes 0 to net worth, so no total moves.
+// `schwab-68651972` vanished after 2026-05-06 (6 accounts -> 5) and went unremarked for
+// four months. That instance was harmless — it was always $0.00 with no holdings — but
+// the mechanism is not: a funded account would disappear exactly as quietly.
+function checkAccountSetShrink(db) {
+  const warnings = [];
+  const institutions = db.prepare(
+    'SELECT DISTINCT institution FROM balances WHERE institution IS NOT NULL'
+  ).all().map(r => r.institution);
+
+  for (const inst of institutions) {
+    const syncs = db.prepare(
+      'SELECT DISTINCT synced_at FROM balances WHERE institution = ? ORDER BY synced_at DESC LIMIT 2'
+    ).all(inst).map(r => r.synced_at);
+    if (syncs.length < 2) continue;
+
+    const setFor = (ts) => new Set(db.prepare(
+      'SELECT DISTINCT account_id FROM balances WHERE institution = ? AND synced_at = ?'
+    ).all(inst, ts).map(r => r.account_id));
+
+    const latest = setFor(syncs[0]);
+    const previous = setFor(syncs[1]);
+    const dropped = [...previous].filter(a => !latest.has(a));
+
+    if (dropped.length > 0) {
+      warnings.push(
+        `[import] \u26a0 ${inst}: account list SHRANK ${previous.size} -> ${latest.size} ` +
+        `since the previous sync. Missing: ${dropped.join(', ')}. ` +
+        `An omitted account is not a zero balance — confirm it was closed, not dropped.`
+      );
+    }
+  }
+
+  // Accounts seen historically but absent from their institution's latest sync for a while.
+  const persistent = db.prepare(`
+    SELECT b.institution, b.account_id, MAX(b.synced_at) AS last_seen
+    FROM balances b
+    GROUP BY b.institution, b.account_id
+    HAVING last_seen < (
+      SELECT MAX(b2.synced_at) FROM balances b2 WHERE b2.institution = b.institution
+    )
+  `).all();
+
+  for (const row of persistent) {
+    const days = (Date.now() - new Date(row.last_seen).getTime()) / 86400000;
+    if (days >= 30) {
+      warnings.push(
+        `[import] \u26a0 ${row.institution}: ${row.account_id} has been absent for ` +
+        `${days.toFixed(0)} days (last seen ${row.last_seen.slice(0, 10)}).`
+      );
+    }
+  }
+
+  return warnings;
+}
 
 function main() {
   if (process.argv.includes('--init')) {
@@ -767,7 +1234,9 @@ function main() {
 
   // Wrap all imports in a transaction for speed
   const importAll = db.transaction(() => {
-    const files = fs.readdirSync(SYNC_OUTPUT_DIR).filter(f => f.endsWith('.json'));
+    // <institution>.result.json files are per-run status sidecars, not institution output
+    const files = fs.readdirSync(SYNC_OUTPUT_DIR)
+      .filter(f => f.endsWith('.json') && !f.endsWith('.result.json'));
     const results = [];
 
     for (const file of files) {
@@ -827,6 +1296,26 @@ function main() {
 
   const results = importAll();
 
+  // Layer 4: Post-import reconciliation — catch any duplicates the current import
+  // may have created (e.g., new sync has condensed description, old row has verbose form).
+  // This runs outside the import transaction so it can see all newly inserted rows.
+  const reconciled = reconcileDuplicates(db);
+  if (reconciled > 0) {
+    console.log(`[import] Post-import: reconciled ${reconciled} duplicate(s) via shared transaction IDs`);
+  }
+
+  // Re-materialize tag rules against the freshly imported transactions (date-range/filter
+  // tags re-apply automatically; manual tags persist by dedup key). Non-fatal on error.
+  try {
+    const { materializeRules } = require('./tags');
+    const tagRes = materializeRules(db);
+    if (tagRes.rules > 0) {
+      console.log(`[import] Tags: ${tagRes.rules} rule(s) materialized → ${tagRes.tagged} tag association(s)`);
+    }
+  } catch (e) {
+    console.warn(`[import] Tag materialization skipped: ${e.message}`);
+  }
+
   // Summary
   const totalBal = results.reduce((s, r) => s + r.balancesImported, 0);
   const totalTxn = results.reduce((s, r) => s + r.txnsImported, 0);
@@ -855,6 +1344,13 @@ function main() {
     } else {
       console.log('[import] ✓ Data semantics validation passed');
     }
+  }
+
+  // Account-set integrity: has any institution's account list silently shrunk?
+  const shrinkWarnings = checkAccountSetShrink(db);
+  if (shrinkWarnings.length > 0) {
+    console.log('\n[import] \u26a0 Account-set warnings:');
+    shrinkWarnings.forEach(w => console.warn(w));
   }
 
   db.close();

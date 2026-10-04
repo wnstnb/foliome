@@ -1,0 +1,321 @@
+{
+  "_about": "Template for config/pfs-profile.json. Copy to config/ (gitignored) and fill in, or run /financial-statement and let the agent interview you. Everything here is something Foliome can't observe from synced accounts. Real terms (today's dollars) throughout. Every value should keep a 'source' so the statement can show where it came from.",
+  "_examples": [
+    "household",
+    "accountMeta",
+    "offSyncAccounts",
+    "humanCapital",
+    "retirement",
+    "spending",
+    "goals",
+    "protection",
+    "mortgage",
+    "careerScenarios"
+  ],
+  "_examplesNote": "Sections listed in _examples still hold sample values. profile.js removes a section from this list the first time you set or push anything in it; the statement flags any that remain.",
+  "household": {
+    "name": "Example household",
+    "state": "XX",
+    "_stateNote": "Two-letter state code. Federal and state tax tables come from the assumptions pack (flat-rate fallback for states without a pack). Add a \"tax\" block only to override them.",
+    "members": [
+      {
+        "id": "adult1",
+        "name": "Adult 1",
+        "role": "adult",
+        "source": "stated",
+        "born": "1986-10",
+        "bornSource": "stated (month approximate)"
+      },
+      {
+        "id": "adult2",
+        "name": "Adult 2",
+        "role": "adult",
+        "source": "stated",
+        "born": "1988-10",
+        "bornSource": "stated (month approximate)"
+      },
+      {
+        "id": "kid1",
+        "name": "Child 1",
+        "role": "child",
+        "source": "stated",
+        "born": "2018-10",
+        "bornSource": "stated (month approximate)"
+      }
+    ],
+    "otherDependents": "none"
+  },
+  "accountMeta": {
+    "_note": "Keyed by Foliome account_id. owner = member id or 'joint'. taxType: taxable | deferred | exempt | education | business | property | liability.",
+    "chase-checking-1234": {
+      "label": "Checking",
+      "owner": "adult1",
+      "taxType": "taxable"
+    },
+    "bank-savings-5678": {
+      "label": "Joint savings / emergency fund",
+      "owner": "joint",
+      "taxType": "taxable",
+      "role": "emergency-fund"
+    },
+    "broker-ira-1111": {
+      "label": "Rollover IRA",
+      "owner": "adult1",
+      "taxType": "deferred"
+    },
+    "broker-roth-2222": {
+      "label": "Roth IRA",
+      "owner": "adult2",
+      "taxType": "exempt"
+    },
+    "plan-529-3333": {
+      "label": "529 plan",
+      "owner": "adult1",
+      "taxType": "education",
+      "beneficiary": "kid1"
+    },
+    "home-residence": {
+      "label": "Primary residence",
+      "owner": "joint",
+      "taxType": "property"
+    },
+    "lender-mortgage-4444": {
+      "label": "Mortgage",
+      "owner": "joint",
+      "taxType": "liability"
+    }
+  },
+  "offSyncAccounts": [
+    {
+      "id": "adult2-workplace",
+      "label": "Adult 2 workplace retirement",
+      "owner": "adult2",
+      "class": "retirement",
+      "taxType": "deferred",
+      "balance": 0,
+      "asOf": "YYYY-MM-DD",
+      "source": "stated, not synced"
+    }
+  ],
+  "humanCapital": {
+    "_note": "Real terms. Discount rate = real risk-free (10y Treasury minus breakeven inflation) + a premium for how uncertain each income stream is: ~1% for very stable pay, ~2% for ordinary salary, ~3-4% for bonus/commission.",
+    "earners": [
+      {
+        "member": "adult1",
+        "streams": [
+          {
+            "id": "adult1-base",
+            "label": "Base salary",
+            "annual": 100000,
+            "source": "stated",
+            "discountReal": 0.045,
+            "risk": "describe stability"
+          },
+          {
+            "id": "adult1-match",
+            "label": "401(k) match",
+            "annual": 5000,
+            "source": "stated",
+            "discountReal": 0.045,
+            "risk": "follows base"
+          }
+        ],
+        "realGrowth": [
+          {
+            "toAge": 50,
+            "rate": 0.015
+          },
+          {
+            "toAge": 200,
+            "rate": 0
+          }
+        ],
+        "growthSource": "assumption",
+        "preTax": [
+          {
+            "type": "401k",
+            "label": "401(k) deferral",
+            "annual": 0,
+            "source": "stated"
+          }
+        ]
+      },
+      {
+        "member": "adult2",
+        "streams": [
+          {
+            "id": "adult2-pay",
+            "label": "Pay",
+            "annual": 80000,
+            "source": "stated",
+            "discountReal": 0.04,
+            "risk": "describe stability"
+          }
+        ],
+        "realGrowth": [
+          {
+            "toAge": 200,
+            "rate": 0.0075
+          }
+        ],
+        "growthSource": "assumption",
+        "preTax": [
+          {
+            "type": "401k",
+            "label": "401(k) deferral",
+            "annual": 0,
+            "source": "stated"
+          }
+        ]
+      }
+    ],
+    "effectiveTaxRate": 0.28,
+    "effectiveTaxRateSource": "assumption: blended income + payroll tax",
+    "pension": {}
+  },
+  "careerScenarios": {
+    "A": {
+      "label": "Both salaried to retirement"
+    },
+    "B": {
+      "label": "Primary earner leaves salaried work early",
+      "member": "adult1",
+      "stopsAfterYears": null
+    },
+    "note": "Side-business income: count only if reliable; otherwise model as optionality at $0.",
+    "sideIncomeLabel": "side business"
+  },
+  "retirement": {
+    "scenarios": [
+      60,
+      65,
+      67
+    ],
+    "base": 65,
+    "source": "assumption",
+    "planningHorizonAge": 95
+  },
+  "spending": {
+    "lifestyleAfterTax": 80000,
+    "lifestyleSource": "trailing-12-month spending from Foliome, corrected by the household",
+    "lifestyleFloor": null,
+    "essentialShare": null,
+    "essentialShareNote": "",
+    "childcare": {
+      "annual": 0,
+      "years": 0,
+      "source": "stated"
+    },
+    "discountReal": {
+      "essential": 0.025,
+      "discretionary": 0.05
+    },
+    "contributionsFromPay": 20000,
+    "contributionsSource": "payroll deferrals",
+    "phased": {}
+  },
+  "goals": [
+    {
+      "id": "lifestyle",
+      "label": "Keep our current lifestyle",
+      "tier": "essential",
+      "priority": 1,
+      "source": "stated",
+      "_types": "Goal types: retirement (from retirement config), education (annualOptions), emergency (plan.emergencyFundMonths), lumpSum {amount, inYears, fundedBy}, debtPayoff {account, targetAge|inYears, rate|scheduledPayment, payment}"
+    },
+    {
+      "id": "edu-kid1",
+      "label": "College, Child 1",
+      "tier": "important",
+      "priority": 2,
+      "years": 4,
+      "annualOptions": {
+        "in-state public": 40000,
+        "private": 85000
+      },
+      "selected": "in-state public",
+      "fundedBy": [
+        "plan-529-3333"
+      ],
+      "source": "placeholder costs in today's $",
+      "startsOn": "2036-10"
+    },
+    {
+      "id": "car",
+      "type": "lumpSum",
+      "label": "Replace the car",
+      "tier": "want",
+      "amount": 35000,
+      "fundedBy": [],
+      "source": "stated",
+      "by": "2030-10"
+    },
+    {
+      "id": "mortgage-payoff",
+      "type": "debtPayoff",
+      "label": "Mortgage paid off",
+      "tier": "important",
+      "account": "lender-mortgage-4444",
+      "targetAge": 55,
+      "rate": 0.045,
+      "source": "stated"
+    }
+  ],
+  "goalDiscountReal": {
+    "essential": 0.025,
+    "important": 0.04,
+    "aspirational": 0.07
+  },
+  "protection": {
+    "life": [],
+    "emergencyFund": {
+      "account": "bank-savings-5678",
+      "status": "funded"
+    },
+    "gaps": "",
+    "estateDocs": {
+      "will": "not started",
+      "beneficiaries": "not started",
+      "guardianship": "not started"
+    }
+  },
+  "conventions": {
+    "homeSellingCost": 0.06,
+    "deferredAccountTaxRate": 0.22,
+    "deferredAccountTaxRateSource": "expected retirement bracket"
+  },
+  "plan": {
+    "_note": "Monthly action plan. Expected returns are REAL (after inflation) and are assumptions; contributions come out in today's dollars (raise them with inflation each year).",
+    "expectedRealReturn": {
+      "education": 0.04,
+      "retirementAccumulation": 0.045,
+      "retirementDrawdown": 0.035,
+      "cash": 0.005
+    },
+    "returnSource": "assumption: diversified portfolio ~4\u20135% real while accumulating, ~3.5% in retirement; cash ~0.5% real",
+    "retirementTaxRate": 0.15,
+    "retirementTaxRateSource": "assumed average tax on retirement withdrawals (mix of deferred and Roth)",
+    "retirementAccounts": [
+      "broker-ira-1111",
+      "broker-roth-2222",
+      "adult2-workplace"
+    ],
+    "retirementContributions": [
+      {
+        "label": "401(k) deferral",
+        "annual": 0
+      }
+    ],
+    "emergencyFundMonths": 6,
+    "sinkingFunds": []
+  },
+  "page1Cards": [
+    "netWorth",
+    "income",
+    "spend",
+    "netCash"
+  ],
+  "_page1CardsOptions": "netWorth, income, spend, netCash, freeAfterGoals, runway, surplus, portfolioGrowth (from the second statement), savingsRate, goalsOnTrack, debtFree",
+  "selfReported": [],
+  "_selfReportedNote": "Amounts the household tells us for plan actions Foliome can't see (payroll saving, an account that isn't linked). One entry per report: { goal, amount, asOf: YYYY-MM-DD, source }. The next review counts entries dated inside its period and marks them \u270e."
+}

@@ -85,6 +85,82 @@ if (!BOT_TOKEN) {
   process.exit(1);
 }
 
+// ─── Portal Auth (optional reverse-proxy mesh) ──────────────────────────────────
+// When a PORTAL_AUTH_SECRET is present in .env.portal, the dashboard may also be
+// served behind a trusted reverse proxy (an "agent portal") that injects an
+// X-Portal-Auth header on every proxied request. Portal-authed requests bypass the
+// Telegram initData gate and authorize API calls directly. With no .env.portal (the
+// default — and always the case for the public OSS deployment), PORTAL_ENABLED is
+// false and every portal code path below is inert: behavior is byte-for-byte
+// identical to a plain Telegram Mini App deployment.
+
+function readPortalEnv(key) {
+  try {
+    const content = fs.readFileSync(path.join(__dirname, '..', '.env.portal'), 'utf8');
+    const m = content.match(new RegExp('^\\s*' + key + '\\s*=\\s*(.+)$', 'm'));
+    return m ? m[1].trim().replace(/^["']|["']$/g, '') : null;
+  } catch { return null; }
+}
+
+const PORTAL_SECRET = readPortalEnv('PORTAL_AUTH_SECRET');
+const PORTAL_ENABLED = !!PORTAL_SECRET;
+const PORTAL_BASE_PATH = (() => {
+  let p = readPortalEnv('PORTAL_BASE_PATH') || '/';
+  if (!p.startsWith('/')) p = '/' + p;
+  if (!p.endsWith('/')) p += '/';
+  return p;
+})();
+// Cookie carries the secret forward so XHR + asset requests authenticate even if the
+// proxy doesn't re-inject the header on every request. SameSite=None;Secure is
+// required because the dashboard renders inside the portal's iframe.
+const PORTAL_COOKIE = PORTAL_ENABLED
+  ? `portal_session=${PORTAL_SECRET}; HttpOnly; Secure; SameSite=None; Path=/`
+  : null;
+
+function constantTimeEquals(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  if (ab.length !== bb.length) return false;
+  return crypto.timingSafeEqual(ab, bb);
+}
+
+function parseCookies(req) {
+  const out = {};
+  const header = req.headers['cookie'];
+  if (!header) return out;
+  for (const part of header.split(';')) {
+    const idx = part.indexOf('=');
+    if (idx === -1) continue;
+    out[part.slice(0, idx).trim()] = part.slice(idx + 1).trim();
+  }
+  return out;
+}
+
+// True when the request carries valid portal credentials (header OR cookie).
+function isPortalAuthed(req) {
+  if (!PORTAL_ENABLED) return false;
+  const header = req.headers['x-portal-auth'];
+  if (header && constantTimeEquals(header, PORTAL_SECRET)) return true;
+  const cookie = parseCookies(req)['portal_session'];
+  return !!(cookie && constantTimeEquals(cookie, PORTAL_SECRET));
+}
+
+// True when the request is header-authed but not yet carrying the session cookie.
+function portalCookieMissing(req) {
+  const cookie = parseCookies(req)['portal_session'];
+  return !(cookie && constantTimeEquals(cookie, PORTAL_SECRET));
+}
+
+// Inject <base href> + a portal-mode marker so the SPA resolves relative asset/API
+// URLs under the portal mount and skips the Telegram handshake. A <meta> marker is
+// used rather than an inline <script> so the existing CSP script-src need not be
+// relaxed with 'unsafe-inline' or a hash.
+function injectPortalHtml(html) {
+  const tags = `<base href="${PORTAL_BASE_PATH}"><meta name="portal-mode" content="true">`;
+  return html.replace(/<head([^>]*)>/i, (m) => `${m}${tags}`);
+}
+
 // ─── Telegram initData Validation ──────────────────────────────────────────────
 // https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
 
@@ -215,6 +291,8 @@ function validateSessionToken(token) {
 // ─── Auth Helper ────────────────────────────────────────────────────────────────
 
 function requireAuth(req) {
+  // Portal-authed requests (trusted reverse proxy) bypass the Bearer session token.
+  if (isPortalAuthed(req)) return { userId: 'portal', firstName: 'Portal', portal: true };
   const authHeader = req.headers['authorization'];
   if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
   const token = authHeader.slice(7);
@@ -241,7 +319,7 @@ function hasDist() {
   try { return fs.existsSync(path.join(DIST_DIR, 'index.html')); } catch { return false; }
 }
 
-function serveStatic(pathname, res) {
+function serveStatic(pathname, res, portal) {
   // Prevent directory traversal
   const safePath = path.normalize(pathname).replace(/^(\.\.[/\\])+/, '');
   let filePath = path.join(DIST_DIR, safePath);
@@ -251,13 +329,16 @@ function serveStatic(pathname, res) {
     if (stat.isFile()) {
       const ext = path.extname(filePath);
       const mime = MIME_TYPES[ext] || 'application/octet-stream';
-      const headers = { 'Content-Type': mime };
-      // Prevent browser caching of index.html so rebuilt dashboards appear immediately
+      // HTML is read into memory so portal markers can be injected; also no-cache
+      // so rebuilt dashboards appear immediately.
       if (ext === '.html') {
-        headers['Cache-Control'] = 'no-cache';
-        headers['Content-Security-Policy'] = CSP_HEADER;
+        let html = fs.readFileSync(filePath, 'utf8');
+        if (portal) html = injectPortalHtml(html);
+        res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': 'no-cache', 'Content-Security-Policy': CSP_HEADER });
+        res.end(html);
+        return true;
       }
-      res.writeHead(200, headers);
+      res.writeHead(200, { 'Content-Type': mime });
       fs.createReadStream(filePath).pipe(res);
       return true;
     }
@@ -267,7 +348,8 @@ function serveStatic(pathname, res) {
   if (!path.extname(pathname)) {
     try {
       const indexPath = path.join(DIST_DIR, 'index.html');
-      const html = fs.readFileSync(indexPath, 'utf8');
+      let html = fs.readFileSync(indexPath, 'utf8');
+      if (portal) html = injectPortalHtml(html);
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': CSP_HEADER });
       res.end(html);
       return true;
@@ -321,6 +403,13 @@ const CSP_HEADER = [
 
 const server = http.createServer((req, res) => {
   const parsed = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+
+  // Portal: authorize via injected header / session cookie, and mint the cookie on
+  // the first header-authed response so subsequent XHR + asset loads carry auth.
+  const portalAuthed = isPortalAuthed(req);
+  if (portalAuthed && PORTAL_COOKIE && portalCookieMissing(req)) {
+    res.setHeader('Set-Cookie', PORTAL_COOKIE);
+  }
 
   // Health check (no auth needed — returns no data)
   if (parsed.pathname === '/health') {
@@ -513,7 +602,7 @@ const server = http.createServer((req, res) => {
   // ─── Static File Serving (SPA) ─────────────────────────────────────────────
   if (hasDist()) {
     const pathname = parsed.pathname === '/' ? '/index.html' : parsed.pathname;
-    if (serveStatic(pathname, res)) return;
+    if (serveStatic(pathname, res, portalAuthed)) return;
   }
 
   res.writeHead(404);
@@ -523,5 +612,6 @@ const server = http.createServer((req, res) => {
 server.listen(PORT, () => {
   console.log(`[dashboard] Server running on http://localhost:${PORT}`);
   console.log(`[dashboard] Allowed Telegram user: ${ALLOWED_CHAT_ID}`);
+  if (PORTAL_ENABLED) console.log(`[dashboard] Portal mode enabled — base "${PORTAL_BASE_PATH}", header/cookie auth active`);
   console.log(`[dashboard] Expose with: cloudflared tunnel --url http://localhost:${PORT}`);
 });

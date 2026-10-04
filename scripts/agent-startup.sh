@@ -10,7 +10,11 @@ if [ -z "$NODE" ]; then
   NODE="$HOME/.nvm/versions/node/v22.22.2/bin/node"
 fi
 
-# 1. Start dashboard server if not running
+# 1. (removed 2026-09-18) A Telegram plugin patch step used to run here.
+# Outbound formatting now happens at send time, so startup no longer touches
+# the plugin.
+
+# 2. Start dashboard server if not running
 if ! pgrep -f "dashboard-server.js" > /dev/null 2>&1; then
   nohup "$NODE" scripts/dashboard-server.js > /dev/null 2>&1 &
   echo "[startup] Dashboard server started"
@@ -38,7 +42,9 @@ if [ -f "$SCHEDULES" ]; then
 fi
 
 # 4. Point to prior conversation transcripts
-TRANSCRIPT_DIR="$HOME/.claude/projects/-Users-$(whoami)-Projects-foliome"
+# Claude Code names the project dir after the repo path with every
+# non-alphanumeric character replaced by "-" (works on macOS and Linux).
+TRANSCRIPT_DIR="$HOME/.claude/projects/$(pwd | sed 's|[^A-Za-z0-9]|-|g')"
 if [ -d "$TRANSCRIPT_DIR" ]; then
   LATEST=$(ls -t "$TRANSCRIPT_DIR"/*.jsonl 2>/dev/null | head -1)
   if [ -n "$LATEST" ]; then

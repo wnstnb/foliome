@@ -61,7 +61,7 @@ When the explorer can't see elements (0 annotations in a section), you've hit sh
 | `<mds-select>`, `<mds-button>`, `<mds-list-item>` | Chase | `document.querySelector('#elementId').click()` for host elements |
 | `<c1-ease-select>` | Capital One | Click `.c1-ease-select-trigger` to open → click `[role="option"]` to select |
 | `<ui-button>`, `<ui-pane-backdrop>` | Apple Card | `page.evaluate(() => el.click())` to bypass backdrop overlays |
-| Native `<select>` in Angular/React | NetBenefits | Needs Playwright `selectOption()` — explorer evaluate can't trigger framework bindings |
+| Native `<select>` in Angular/React | Retirement plan portals | Needs Playwright `selectOption()` — explorer evaluate can't trigger framework bindings |
 | `div[role="combobox"]` with `li[role="option"]` | Wells Fargo | Click combobox to open → click `[role="option"]` to select — handled by `getDropdownOptions()` |
 
 ## Common Obstacles Quick Reference
@@ -92,3 +92,7 @@ When the explorer can't see elements (0 annotations in a section), you've hit sh
 | `direct-login-brokerage` | Direct, cookie banner | SMS | TBD | S-B/S-D: varies |
 | `direct-login-central-download-page` | Direct, single-step | SMS (evaluateClick) | A variant: download page, readonly dates, radio format, headerless CSV | S-A: PDF |
 | `iframe-framebust-export-modal` | Iframe, frame-busting MFA | SMS (multi-step) / push | A variant: shadow DOM nav + export modal | S-A: PDF (brokerage/IRA) |
+
+### Agent-hint keys
+
+Some template keys are read by the agent during extraction, not by the reader code: `anchorDatePattern`, `closingBalanceLabel`, `periodFormat`, `signConvention`, `currentSource`, and `dismissSelector` inside obstacle notes. They record what the page looks like (which label holds the closing balance, how the statement period is printed, which sign a liability uses) so the agent extracts consistently. Keep them accurate when you copy a template; changing them does not change what Playwright does.

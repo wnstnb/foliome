@@ -6,6 +6,41 @@ const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
 let bot;
 let dashboardBot;
+let _mdv2LibPromise;
+
+// Lazy + cached ESM import of the shared MDV2 converter. CommonJS can't
+// require ESM synchronously, so callers await this once per send.
+function loadMdv2() {
+  if (!_mdv2LibPromise) {
+    _mdv2LibPromise = import('./lib/telegram-mdv2.mjs');
+  }
+  return _mdv2LibPromise;
+}
+
+// Convert standard markdown → MDV2-escaped text and send with parse_mode.
+// On Telegram parse error (escape miss, malformed entity), fall back to plain
+// text with no parse_mode so the message is never silently lost.
+async function sendWithMdv2(b, target, text, extraOpts = {}) {
+  const { formatMessageMdV2 } = await loadMdv2();
+  const escaped = formatMessageMdV2(text);
+  try {
+    return await b.sendMessage(target, escaped, { ...extraOpts, parse_mode: 'MarkdownV2' });
+  } catch (err) {
+    console.error('[telegram] MarkdownV2 parse failed, falling back to plain:', err.message);
+    return b.sendMessage(target, text, extraOpts);
+  }
+}
+
+async function sendPhotoWithMdv2(b, target, buffer, caption, extraOpts = {}) {
+  const { formatMessageMdV2 } = await loadMdv2();
+  const escaped = caption ? formatMessageMdV2(caption) : caption;
+  try {
+    return await b.sendPhoto(target, buffer, { ...extraOpts, caption: escaped, parse_mode: 'MarkdownV2' });
+  } catch (err) {
+    console.error('[telegram] MarkdownV2 parse failed on photo caption, falling back to plain:', err.message);
+    return b.sendPhoto(target, buffer, { ...extraOpts, caption });
+  }
+}
 
 function getBot() {
   if (!bot && BOT_TOKEN) {
@@ -35,7 +70,7 @@ async function sendMessage(text) {
     console.log('[telegram] Bot not configured, would send:', text);
     return null;
   }
-  return b.sendMessage(CHAT_ID, text, { parse_mode: 'Markdown' });
+  return sendWithMdv2(b, CHAT_ID, text);
 }
 
 async function sendPhoto(buffer, caption) {
@@ -44,7 +79,7 @@ async function sendPhoto(buffer, caption) {
     console.log('[telegram] Bot not configured, would send photo:', caption);
     return null;
   }
-  return b.sendPhoto(CHAT_ID, buffer, { caption, parse_mode: 'Markdown' });
+  return sendPhotoWithMdv2(b, CHAT_ID, buffer, caption);
 }
 
 /**
@@ -105,8 +140,7 @@ async function sendDashboard(chatId, text, url, buttonText = 'Open Dashboard') {
     console.log('[telegram] Bot not configured, would send dashboard button:', text);
     return null;
   }
-  return b.sendMessage(target, text, {
-    parse_mode: 'Markdown',
+  return sendWithMdv2(b, target, text, {
     reply_markup: {
       inline_keyboard: [[{
         text: buttonText,

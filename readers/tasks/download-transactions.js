@@ -192,6 +192,27 @@ async function runExportModal(page, config, options) {
  * Pattern A: Central download dialog.
  * One dialog with an account dropdown — cycle through accounts without leaving the page.
  */
+/**
+ * Report per-account download coverage.
+ *
+ * The summary line deliberately contains the word "transactions" so it survives
+ * sync-all.js's stdout line filter, and says "PARTIAL" when any account yielded
+ * nothing. A silent no-op on 4 of 5 Capital One accounts went unnoticed for four
+ * months because the old line ("Total: N transactions across 5 accounts") counted
+ * accounts *offered*, not accounts *read*.
+ */
+function logCoverage(institution, txnCount, coverage) {
+  const { attempted, succeeded, failed } = coverage;
+  if (failed.length === 0) {
+    console.log(`[${institution}:txns] Total: ${txnCount} transactions from ${succeeded}/${attempted} accounts`);
+    return;
+  }
+  console.log(
+    `[${institution}:txns] PARTIAL — ${txnCount} transactions from only ${succeeded}/${attempted} accounts. ` +
+    `No transactions read for: ${failed.map(f => `${f.accountId} (${f.reason})`).join('; ')}`
+  );
+}
+
 async function runCentralDialog(page, config, options) {
   const { institution, accounts: accountList } = config;
   const txnConfig = config.transactions;
@@ -214,6 +235,7 @@ async function runCentralDialog(page, config, options) {
   dropdownAccounts.forEach(a => console.log(`[${institution}:txns]   - "${a}"`));
 
   const allTransactions = [];
+  const coverage = { attempted: 0, succeeded: 0, failed: [] };
 
   for (const dropdownEntry of dropdownAccounts) {
     const match = matchAccount(dropdownEntry, accountList);
@@ -223,6 +245,7 @@ async function runCentralDialog(page, config, options) {
     }
     if (options.accountIds && !options.accountIds.includes(match.account.accountId)) continue;
 
+    coverage.attempted++;
     const acct = match.account;
     console.log(`[${institution}:txns] Downloading ${acct.accountId} ("${dropdownEntry}")...`);
     addAlias(institution, acct.accountId, dropdownEntry);
@@ -267,8 +290,10 @@ async function runCentralDialog(page, config, options) {
       const transactions = parseCSV(csvPath, acct, institution, 0, txnConfig.csvColumns);
       console.log(`[${institution}:txns] Parsed ${transactions.length} transactions for ${acct.accountId}`);
       allTransactions.push(...transactions);
+      coverage.succeeded++;
     } else {
-      console.warn(`[${institution}:txns] No file downloaded for ${acct.accountId}`);
+      coverage.failed.push({ accountId: acct.accountId, reason: 'no file downloaded' });
+      console.warn(`[${institution}:txns] NO TRANSACTIONS for ${acct.accountId} — no file downloaded`);
     }
 
     // Handle confirmation page (Pattern A: "Download other activity" or similar)
@@ -287,8 +312,8 @@ async function runCentralDialog(page, config, options) {
     await page.locator('button:has-text("Cancel")').click({ timeout: 3000 });
   } catch {}
 
-  console.log(`[${institution}:txns] Total: ${allTransactions.length} transactions across ${dropdownAccounts.length} accounts`);
-  return { transactions: allTransactions };
+  logCoverage(institution, allTransactions.length, coverage);
+  return { transactions: allTransactions, coverage };
 }
 
 /**
@@ -302,6 +327,13 @@ async function runPerAccount(page, config, options) {
   const toDate = options.toDate || formatDate(new Date());
   const fromDate = options.fromDate || null;
   const allTransactions = [];
+  // Per-account coverage ledger. An account that yields no CSV is a coverage gap,
+  // not a quiet no-op — the caller downgrades the task to `partial` on any entry here.
+  const coverage = { attempted: 0, succeeded: 0, failed: [] };
+  const missed = (accountId, reason) => {
+    coverage.failed.push({ accountId, reason });
+    console.warn(`[${institution}:txns] NO TRANSACTIONS for ${accountId} — ${reason}`);
+  };
 
   // Start from the dashboard
   const dashboardUrl = page.url();
@@ -309,6 +341,7 @@ async function runPerAccount(page, config, options) {
 
   for (const acct of accountList) {
     if (options.accountIds && !options.accountIds.includes(acct.accountId)) continue;
+    coverage.attempted++;
 
     console.log(`[${institution}:txns] Navigating to ${acct.accountId} (${acct.bankName} ...${acct.last4})...`);
 
@@ -345,7 +378,7 @@ async function runPerAccount(page, config, options) {
     }
 
     if (!clicked) {
-      console.warn(`[${institution}:txns] Could not navigate to ${acct.accountId}, skipping`);
+      missed(acct.accountId, 'could not navigate to the account page');
       continue;
     }
 
@@ -359,19 +392,23 @@ async function runPerAccount(page, config, options) {
       await page.locator(txnConfig.downloadLinkSelector).click({ timeout: 5000 });
       await page.waitForTimeout(2000);
     } catch (e) {
-      console.warn(`[${institution}:txns] Download link not found for ${acct.accountId}: ${e.message}`);
+      missed(acct.accountId, `download link not found (${e.message})`);
       await goBack(page, txnConfig);
       continue;
     }
 
-    // Select time period
+    // Select time period. Try the configured selector first — the text-scanning
+    // fallback cannot see shadow-DOM dropdowns.
     if (mode === 'all') {
-      // Try selecting "Year-to-Date" or equivalent
       const allLabel = txnConfig.timePeriodOptions?.all || 'Year-to-Date';
-      await selectTimePeriod(page, allLabel);
+      if (!await selectTimePeriodByConfig(page, txnConfig, allLabel)) {
+        await selectTimePeriod(page, allLabel);
+      }
     } else {
       const customLabel = txnConfig.timePeriodOptions?.custom || 'Custom Date Range';
-      await selectTimePeriod(page, customLabel);
+      if (!await selectTimePeriodByConfig(page, txnConfig, customLabel)) {
+        await selectTimePeriod(page, customLabel);
+      }
       await page.waitForTimeout(1000);
 
       const from = fromDate || subtractDays(toDate, 30);
@@ -392,25 +429,40 @@ async function runPerAccount(page, config, options) {
       const transactions = parseCSV(csvPath, acct, institution);
       console.log(`[${institution}:txns] Parsed ${transactions.length} transactions for ${acct.accountId}`);
       allTransactions.push(...transactions);
+      coverage.succeeded++;
     } else {
-      console.warn(`[${institution}:txns] No file downloaded for ${acct.accountId}`);
+      missed(acct.accountId, 'no file downloaded');
     }
 
     // Dismiss "Download Started" modal
     await page.waitForTimeout(1000);
     await dismissPostDownload(page, txnConfig);
 
-    // Go back to dashboard for next account
-    // May need multiple backs (download page → account page → dashboard)
-    // Safest: navigate directly to dashboard URL
+    // Go back to the dashboard for the next account.
+    //
+    // This used to navigate to `config.entryUrl`, which for most institutions is the
+    // SIGN-IN page, not the account list — while `dashboardUrl` (captured above, at
+    // the top of this function) held the real post-login URL and was never used.
+    // On an authenticated session the sign-in page redirects, but the redirect plus
+    // the SPA render did not finish inside the fixed 3s wait, so the account tiles
+    // were absent and every account after the first failed to navigate. Capital One
+    // read 1 of 5 accounts for four months on this.
+    //
+    // Return to the captured dashboard URL, and wait for a tile to actually render
+    // instead of guessing at a duration.
     console.log(`[${institution}:txns] Returning to dashboard...`);
-    await page.goto(config.entryUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
-    await page.waitForTimeout(3000);
+    await page.goto(dashboardUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
+    try {
+      await page.waitForSelector('[id^="number_"], .account-tile, .tiles-layout__tile', { timeout: 15000 });
+    } catch {
+      console.warn(`[${institution}:txns] Dashboard tiles did not render within 15s after returning`);
+    }
+    await page.waitForTimeout(1000);
     await dismissPopups(page);
   }
 
-  console.log(`[${institution}:txns] Total: ${allTransactions.length} transactions across ${accountList.length} accounts`);
-  return { transactions: allTransactions };
+  logCoverage(institution, allTransactions.length, coverage);
+  return { transactions: allTransactions, coverage };
 }
 
 /**
@@ -873,6 +925,40 @@ async function dismissPopups(page) {
  * Select a time period in a download dialog with custom dropdown components.
  * Handles custom elements (e.g., shadow DOM selects) — click to open, then click the option.
  */
+/**
+ * Open a time-period dropdown using the institution's configured selector, then
+ * pick the option by its visible label.
+ *
+ * `selectTimePeriod()` below finds the dropdown by scanning `c1-ease-select button,
+ * [class*="select"] button` for text — which matches NOTHING on Capital One, because
+ * c1-ease-select is a web component and its button lives in a shadow root that a
+ * light-DOM CSS query cannot reach. The config has carried `timePeriodSelector` and
+ * `timePeriodOptions` since the reader was built and the generic code never used
+ * either, so every run silently fell back to whatever period was preselected.
+ *
+ * Opens by configured selector (needed for shadow DOM), chooses by label (stable
+ * across the component library's generated option ids).
+ */
+async function selectTimePeriodByConfig(page, txnConfig, label) {
+  if (!txnConfig.timePeriodSelector) return false;
+  try {
+    const trigger = page.locator(txnConfig.timePeriodSelector).first();
+    if (await trigger.count() === 0) return false;
+    await trigger.click({ timeout: 5000 });
+    await page.waitForTimeout(800);
+    const option = page.locator(`[role="option"]:visible:has-text("${label}"), c1-ease-option:visible:has-text("${label}")`).first();
+    if (await option.count() === 0) {
+      await trigger.click({ timeout: 2000 }).catch(() => {});
+      return false;
+    }
+    await option.click({ timeout: 5000 });
+    await page.waitForTimeout(800);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function selectTimePeriod(page, label) {
   // Try clicking visible dropdown-like elements that might contain the time period
   // Some banks use custom select components that render as a button + listbox
@@ -1070,7 +1156,7 @@ async function downloadCSV(page, submitSelector, accountId, institution) {
 function parseCSV(csvPath, account, institution, csvSkipRows = 0, csvColumns = null) {
   const raw = fs.readFileSync(csvPath, 'utf-8');
   const lines = raw.split('\n').filter(l => l.trim());
-  // Skip metadata rows (e.g., NetBenefits has "Plan name:" and "Date Range" before header)
+  // Skip metadata rows (e.g., some retirement portals put "Plan name:" and "Date Range" before the header)
   const dataLines = lines.slice(csvSkipRows);
 
   // Headerless CSV: if csvColumns provided, use those as header names and treat all lines as data

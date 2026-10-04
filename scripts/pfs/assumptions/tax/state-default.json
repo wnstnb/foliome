@@ -1,0 +1,15 @@
+{
+  "_about": "Fallback for states without a pack: a flat effective rate on taxable wages.",
+  "flatRate": 0.05,
+  "noIncomeTaxStates": [
+    "AK",
+    "FL",
+    "NV",
+    "NH",
+    "SD",
+    "TN",
+    "TX",
+    "WA",
+    "WY"
+  ]
+}

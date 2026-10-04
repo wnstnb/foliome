@@ -7,7 +7,9 @@ gmail-token.json
 .gstack/
 
 # Data (SQLite, sync output, chrome profiles, downloads, screenshots)
-data/
+data/*
+!data/wiki/
+data/wiki/*
 
 # Config (populated from config-templates/ on setup — personal data after customization)
 config/
@@ -29,3 +31,10 @@ dashboard/node_modules/
 !assets/*.png
 
 eng.traineddata
+.env.portal
+
+# Agent scratch and editor backups
+.runtime/
+*.bak
+*.bak-*
+*.bak2-*

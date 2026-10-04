@@ -1,0 +1,22 @@
+{
+  "description": "Recurring non-card outflows the household picture sets aside as committed cash. Card payments come from payment-schedule.json. Cadences: monthly (dayOfMonth) or every_n_days (anchorDate + intervalDays).",
+  "obligations": [
+    {
+      "name": "Mortgage",
+      "class": "mortgage",
+      "amount": 2500.00,
+      "cadence": "monthly",
+      "dayOfMonth": 1,
+      "payFrom": "chase-checking-1234"
+    },
+    {
+      "name": "Childcare",
+      "class": "childcare",
+      "amount": 600.00,
+      "cadence": "every_n_days",
+      "anchorDate": "2026-01-05",
+      "intervalDays": 14,
+      "payFrom": "chase-checking-1234"
+    }
+  ]
+}

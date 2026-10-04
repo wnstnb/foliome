@@ -67,7 +67,7 @@ export function MarkdownRenderer({ content, onNavigate }: MarkdownRendererProps)
         .replace(/^\.\//, '');
       return (
         <img
-          src={`/api/wiki/asset?path=${encodeURIComponent(assetPath)}`}
+          src={`api/wiki/asset?path=${encodeURIComponent(assetPath)}`}
           alt={alt || ''}
           className="max-w-full rounded-lg my-2"
           loading="lazy"

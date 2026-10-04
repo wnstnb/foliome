@@ -62,8 +62,6 @@ export const INSTITUTION_COLORS: Record<string, string> = {
   // Brokerages
   schwab: '#00A3E0',
   fidelity: '#4B8B3B',
-  'net-benefits': '#4B8B3B',
-  netbenefits: '#4B8B3B',
   vanguard: '#C22E2A',
   'e-trade': '#6633CC',
   etrade: '#6633CC',
@@ -139,19 +137,21 @@ export const LIABILITY_TYPES = new Set(['credit', 'mortgage']);
 /** Wiki page type display labels */
 export const WIKI_TYPE_LABELS: Record<string, string> = {
   goal: 'Goals',
-  preference: 'Preferences',
-  concern: 'Concerns',
+  decision: 'Decisions',
+  finding: 'Findings',
   context: 'Context',
-  pattern: 'Patterns',
-  article: 'Articles',
   reflection: 'Reflections',
+  source: 'Sources',
 };
 
-/** Wiki status → CSS color */
+/** Wiki status → CSS color. Always shown with the status word, never color alone. */
 export const WIKI_STATUS_COLORS: Record<string, string> = {
+  standing: 'var(--positive)',
   active: 'var(--positive)',
-  resolved: 'var(--text-muted)',
-  archived: 'var(--border)',
+  parked: 'var(--warning)',
+  refuted: 'var(--negative)',
+  superseded: 'var(--text-muted)',
+  closed: 'var(--text-muted)',
 };
 
 /** Date filter presets */

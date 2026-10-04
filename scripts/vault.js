@@ -19,6 +19,7 @@ const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
+const { checkBwVersion } = require('./check-bw-version');
 
 const CREDENTIAL_MAP_PATH = path.join(__dirname, '..', 'config', 'credential-map.json');
 const ACCOUNTS_PATH = path.join(__dirname, '..', 'config', 'accounts.json');
@@ -40,6 +41,10 @@ function saveMap(map) {
 }
 
 function getSession() {
+  // Hard-fail if the installed bw is on the known-compromised list.
+  // checkBwVersion() exits the process before we hand the master password to a poisoned binary.
+  checkBwVersion();
+
   const masterPassword = process.env.BW_PASSWORD;
   if (!masterPassword) {
     console.error('BW_PASSWORD not set in .env');
@@ -97,15 +102,14 @@ function ask(question) {
 // ─── Commands ───────────────────────────────────────────────────────────────
 
 async function cmdStatus() {
-  // Check bw CLI
-  try {
-    const version = execSync('bw --version', { stdio: 'pipe', timeout: 5000, encoding: 'utf-8' }).trim();
-    console.log(`Bitwarden CLI: v${version}`);
-  } catch {
+  // checkBwVersion exits if version is on the blocklist; returns null if not installed.
+  const version = checkBwVersion();
+  if (version === null) {
     console.log('Bitwarden CLI: NOT INSTALLED');
     console.log('  Install: https://bitwarden.com/help/cli/');
     return;
   }
+  console.log(`Bitwarden CLI: v${version}`);
 
   // Check auth status
   try {

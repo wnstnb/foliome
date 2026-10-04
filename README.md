@@ -34,8 +34,8 @@ DAILY SYNC (automated)
           v          v              v
        Skills     Dashboard      Wiki
        /sync      React Mini    Agent memory
-       /brief-me  App served    (goals, patterns,
-       /alerts    via Telegram   preferences)
+       /brief-me  App served    (goals,
+       /alerts    via Telegram   decisions, findings)
 ```
 
 **Layer 1 (JSON):** Raw sync output per institution. Human-reviewable, schema-agnostic.
@@ -110,7 +110,7 @@ Requires Bun and the Claude Code Telegram plugin. See [docs/telegram-setup.md](d
 claude --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions
 ```
 
-A Telegram Mini App dashboard is also available — a responsive React SPA with tabs for net worth overview, transaction analysis, budgets, portfolio holdings, subscriptions, and an agent knowledge base wiki. The Brief tab is the landing page — a personalized daily financial narrative powered by agent memory and live data. Responsive layout adapts from mobile (Telegram WebView) to full-page (desktop browser). The server validates requests via Telegram's HMAC-SHA256 initData, issues session tokens for API calls, and auto-detects the correct bot token. See [docs/telegram-setup.md](docs/telegram-setup.md#dashboard-mini-app-optional) for setup.
+A Telegram Mini App dashboard is also available — a responsive React SPA with tabs for net worth overview, transaction analysis, budgets, portfolio holdings, subscriptions, and an agent knowledge base wiki. The Brief tab is the landing page — a personalized daily financial narrative powered by agent memory and live data. Responsive layout adapts from mobile (Telegram WebView) to full-page (desktop browser). The server validates requests via Telegram's HMAC-SHA256 initData, issues session tokens for API calls, and auto-detects the correct bot token. It can also run behind an authenticating reverse proxy (portal mode), which then handles auth instead of Telegram. See [docs/telegram-setup.md](docs/telegram-setup.md#dashboard-mini-app-optional) for setup.
 
 ## What your agent can do with your data
 
@@ -120,6 +120,7 @@ Once the data layer is synced, a library of skills in `.claude/skills/` provides
 - **Scheduling** — `/foliome-loop` manages recurring tasks (e.g., daily non-MFA sync, weekly morning brief) with cron scheduling, failure tracking, and auto-suspend.
 - **Awareness** — `/morning-brief` generates a daily financial summary. `/spending-alerts` monitors for large charges and low balances. `/payment-reminders` tracks credit card due dates.
 - **Query** — `/brief-me` answers on-demand questions about spending, portfolio, and trends with optional CSV export.
+- **Planning (optional)** — `/financial-statement` builds a printable personal financial statement: what you own and owe, monthly cash flow, goals with the monthly action each needs, today's path vs. the plan, and retirement odds. It interviews only for what the data can't show, and reviews progress quarterly. It's an add-on: nothing else in Foliome depends on it, and its one extra dependency (`xlsx`) is optional.
 - **Dashboard** — `/custom-view` builds new dashboard tabs from natural language requests.
 - **Management** — `/category-override` reclassifies transactions via natural language. `/reflect` maintains the agent's knowledge wiki.
 
@@ -131,6 +132,8 @@ Local-only pipeline, no API calls. A tiered classification system handles every 
 1. **Merchant rules** — pattern matching on description (user-defined overrides, highest trust)
 2. **Fine-tuned DistilBERT** — local classifier trained on synthetic US bank transaction data, with cache for previously seen merchants ([model on HuggingFace](https://huggingface.co/DoDataThings/distilbert-us-transaction-classifier-v2))
 3. **Bank category fallback** — if model confidence < 0.70 and the bank provided a usable category
+
+Tags sit alongside categories: user-curated labels (a trip, a renovation, a reimbursable expense) that a transaction can carry several of. They live in SQLite, can be applied by date-range or filter rules, and survive every re-import.
 
 ## Statement balances
 
@@ -158,18 +161,7 @@ Foliome does not use Claude's Computer Use (screenshot-per-action). It uses a hy
 ## Project structure
 
 ```
-.claude/skills/
-  getting-started/              Guided first-bank setup for new users
-  sync/                         Full sync orchestration with MFA handling
-  learn-institution/            Build new bank integrations interactively
-  foliome-loop/                 Recurring task scheduling (cron-based)
-  morning-brief/                Daily financial summary
-  brief-me/                     On-demand financial briefing (spending, portfolio, reports)
-  spending-alerts/              Large charge and low balance monitoring
-  payment-reminders/            Credit card due date tracking
-  category-override/            Transaction category overrides
-  custom-view/                  Build custom dashboard tabs from natural language
-  reflect/                       Wiki maintenance (consolidate, update, discover patterns)
+.claude/skills/                 Agent skills, one folder each (see list above)
 readers/                        Browser automation primitives
   browser-reader.js             Config-driven login/extraction engine
   run.js                        CLI entry point
@@ -194,6 +186,7 @@ connectors/                     API integrations (no browser)
 sync-engine/                    Layer 2 persistence
   import.js                     JSON --> SQLite with normalization + dedup
   classify.js                   Transaction classifier (account-type → rules → model → bank fallback)
+  tags.js                       Transaction tags (user labels and rules, separate from categories)
   parse-symbol.js               Options contract and investment symbol parser
   security-gate.js              Domain + HTTPS verification
 dashboard/                      React SPA (Vite + TypeScript + Tailwind + shadcn)
@@ -204,11 +197,15 @@ scripts/
   dashboard.js                  Legacy HTML dashboard generator (backward compat)
   dashboard-queries.js          Extracted SQL query functions for API + legacy
   dashboard-server.js           Telegram Mini App server (auth, API routes, static serving)
+  wiki.js                       Wiki maintenance CLI (generated index, goal numbers, link check)
   wiki-queries.js               Wiki data access (frontmatter parsing, path confinement)
   credentials.js                Credential resolution (Bitwarden vault → .env fallback)
   encrypt-env.js                Pre-flight encryption for sensitive .env values
   validate-data.js              Data validation (semantics, normalization, database invariants)
   validate-slugs.js             Slug consistency checker across all config surfaces
+  household-picture.js          Whole-household totals and flows shared by the brief and planning views
+  migrate-dedup-natural-key.js  One-time migration to natural-key transaction dedup
+  pfs/                          Personal financial statement: engine, renderer, tax and market data, demo household + tests
 config/                         Configuration
   institutions-status.md        Per-institution status, MFA details, download patterns
   budgets.json                  Monthly budget limits per category (for Budget tab)
@@ -216,20 +213,13 @@ data/                           All gitignored
   sync-output/                  Layer 1 JSON files
   foliome.db                    Layer 2 SQLite database
   brief/                        Daily brief JSON files (latest.json + dated archives)
-  wiki/                         Agent memory wiki (goals, preferences, patterns)
+  wiki/                         Agent memory wiki (goals, decisions, findings, context — see docs/wiki.md)
   exports/                      Skill-generated CSV exports
 ```
 
 ## Dependencies
 
-| Package | Purpose |
-|---------|---------|
-| `playwright` | Browser automation |
-| `better-sqlite3` | SQLite for Layer 2 |
-| `@xenova/transformers` | Local transaction classifier (fine-tuned DistilBERT via ONNX) |
-| `node-telegram-bot-api` | Telegram notifications |
-| `googleapis` | Gmail API for email MFA |
-| `@dotenvx/dotenvx` | Environment variable loading with encryption at rest |
+Core: Playwright (browser automation), better-sqlite3 (Layer 2), a local ONNX transaction classifier, and dotenvx (encrypted `.env`). Optional extras such as `xlsx` (financial statement) are listed under `optionalDependencies`. See [package.json](package.json) for the full list.
 
 ## License
 

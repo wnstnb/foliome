@@ -1,0 +1,468 @@
+{
+  "_about": "Synthetic demo household for the /financial-statement skill. Every person, account and number here is made up. Used by scripts/pfs/demo/test.js to build a sample statement without anyone's real data.",
+  "household": {
+    "name": "Rivera household (demo)",
+    "state": "CO",
+    "members": [
+      {
+        "id": "alex",
+        "name": "Alex",
+        "role": "adult",
+        "source": "demo",
+        "born": "1985-10",
+        "bornSource": "demo (month approximate)"
+      },
+      {
+        "id": "sam",
+        "name": "Sam",
+        "role": "adult",
+        "source": "demo",
+        "born": "1987-10",
+        "bornSource": "demo (month approximate)"
+      },
+      {
+        "id": "kid1",
+        "name": "Older child",
+        "role": "child",
+        "source": "demo",
+        "born": "2017-10",
+        "bornSource": "demo (month approximate)"
+      },
+      {
+        "id": "kid2",
+        "name": "Younger child",
+        "role": "child",
+        "source": "demo",
+        "born": "2021-10",
+        "bornSource": "demo (month approximate)"
+      }
+    ],
+    "otherDependents": "none"
+  },
+  "accountMeta": {
+    "demobank-checking-1001": {
+      "label": "Joint checking",
+      "owner": "joint",
+      "taxType": "taxable"
+    },
+    "demobank-savings-1002": {
+      "label": "Emergency savings",
+      "owner": "joint",
+      "taxType": "taxable",
+      "role": "emergency-fund"
+    },
+    "demobroker-brokerage-2001": {
+      "label": "Taxable brokerage",
+      "owner": "joint",
+      "taxType": "taxable"
+    },
+    "demobroker-ira-2002": {
+      "label": "Rollover IRA",
+      "owner": "alex",
+      "taxType": "deferred"
+    },
+    "demobroker-roth-2003": {
+      "label": "Roth IRA",
+      "owner": "sam",
+      "taxType": "exempt"
+    },
+    "demoplan-401k-3001": {
+      "label": "Workplace 401(k)",
+      "owner": "alex",
+      "taxType": "deferred"
+    },
+    "demo529-education-4001": {
+      "label": "529 plan (older child)",
+      "owner": "alex",
+      "taxType": "education",
+      "beneficiary": "kid1"
+    },
+    "home-residence": {
+      "label": "Home",
+      "owner": "joint",
+      "taxType": "property"
+    },
+    "demolender-mortgage-5001": {
+      "label": "Mortgage",
+      "owner": "joint",
+      "taxType": "liability"
+    },
+    "demobank-credit-6001": {
+      "label": "Credit card",
+      "owner": "joint",
+      "taxType": "liability"
+    }
+  },
+  "offSyncAccounts": [
+    {
+      "id": "sam-403b",
+      "label": "Sam's 403(b)",
+      "owner": "sam",
+      "class": "retirement",
+      "taxType": "deferred",
+      "balance": 61000,
+      "asOf": "2026-09-15",
+      "source": "stated by Sam from the plan website"
+    }
+  ],
+  "humanCapital": {
+    "earners": [
+      {
+        "member": "alex",
+        "streams": [
+          {
+            "id": "alex-base",
+            "label": "Base salary",
+            "annual": 118000,
+            "source": "paystub",
+            "discountReal": 0.04,
+            "risk": "typical salaried role"
+          },
+          {
+            "id": "alex-bonus",
+            "label": "Annual bonus (10% target)",
+            "annual": 11800,
+            "source": "offer letter",
+            "discountReal": 0.065,
+            "risk": "bonus"
+          },
+          {
+            "id": "alex-match",
+            "label": "401(k) match (4%)",
+            "annual": 4720,
+            "source": "benefits guide",
+            "discountReal": 0.04,
+            "risk": "follows base"
+          }
+        ],
+        "realGrowth": [
+          {
+            "toAge": 50,
+            "rate": 0.02
+          },
+          {
+            "toAge": 55,
+            "rate": 0.005
+          },
+          {
+            "toAge": 200,
+            "rate": 0
+          }
+        ],
+        "growthSource": "assumptions pack",
+        "preTax": [
+          {
+            "type": "401k",
+            "label": "401(k) deferral",
+            "annual": 12000,
+            "source": "paystub"
+          }
+        ],
+        "observedNetPay": {
+          "perPeriod": 3168,
+          "periods": 24,
+          "excludes": "bonus",
+          "source": "payroll deposits"
+        }
+      },
+      {
+        "member": "sam",
+        "streams": [
+          {
+            "id": "sam-pay",
+            "label": "Salary",
+            "annual": 76000,
+            "source": "paystub",
+            "discountReal": 0.0375,
+            "risk": "very steady (public school teacher)"
+          }
+        ],
+        "realGrowth": [
+          {
+            "toAge": 200,
+            "rate": 0.0075
+          }
+        ],
+        "growthSource": "assumptions pack",
+        "preTax": [
+          {
+            "type": "403b",
+            "label": "403(b) deferral",
+            "annual": 6000,
+            "source": "paystub"
+          }
+        ]
+      }
+    ],
+    "effectiveTaxRate": 0.25,
+    "pension": {}
+  },
+  "careerScenarios": {
+    "A": {
+      "label": "Both salaried to retirement"
+    },
+    "B": {
+      "label": "Alex leaves salaried work early",
+      "member": "alex",
+      "stopsAfterYears": null
+    },
+    "sideIncomeLabel": "side business",
+    "note": "No side income counted."
+  },
+  "retirement": {
+    "scenarios": [
+      60,
+      65,
+      67
+    ],
+    "base": 65,
+    "planningHorizonAge": 95,
+    "primaryMember": "alex",
+    "successTarget": 0.9,
+    "source": "household"
+  },
+  "spending": {
+    "lifestyleAfterTax": 70000,
+    "lifestyleSource": "Phased from synced transactions.",
+    "lifestyleFloor": null,
+    "essentialShare": null,
+    "childcare": {
+      "annual": 16800,
+      "years": 4,
+      "source": "household"
+    },
+    "discountReal": {
+      "essential": 0.028,
+      "discretionary": 0.05
+    },
+    "contributionsFromPay": 22720,
+    "contributionsSource": "401(k) + 403(b) + match",
+    "phased": {
+      "offSideAllowance": 0,
+      "offSideSource": "all spending is in synced accounts",
+      "childcareSource": "until the younger child starts school-age care ends",
+      "childcareEndsOn": "2030-10"
+    }
+  },
+  "goals": [
+    {
+      "id": "lifestyle",
+      "label": "Keep our current lifestyle",
+      "tier": "essential",
+      "priority": 1,
+      "source": "household"
+    },
+    {
+      "id": "edu-kid1",
+      "label": "College, older child",
+      "tier": "important",
+      "years": 4,
+      "annualOptions": {
+        "public in-state": 30000,
+        "private nonprofit": 63000,
+        "half of public in-state": 15000
+      },
+      "selected": "public in-state",
+      "fundedBy": [
+        "demo529-education-4001"
+      ],
+      "source": "assumptions pack (College Board averages)",
+      "startsOn": "2035-09"
+    },
+    {
+      "id": "edu-kid2",
+      "label": "College, younger child",
+      "tier": "important",
+      "years": 4,
+      "annualOptions": {
+        "public in-state": 30000,
+        "private nonprofit": 63000,
+        "half of public in-state": 15000
+      },
+      "selected": "half of public in-state",
+      "fundedBy": [],
+      "source": "assumptions pack (College Board averages)",
+      "startsOn": "2039-09"
+    },
+    {
+      "id": "car",
+      "type": "lumpSum",
+      "label": "Replace the minivan",
+      "tier": "want",
+      "amount": 32000,
+      "fundedBy": [],
+      "source": "household",
+      "by": "2029-10"
+    },
+    {
+      "id": "mortgage-payoff",
+      "type": "debtPayoff",
+      "label": "Mortgage paid off",
+      "tier": "important",
+      "account": "demolender-mortgage-5001",
+      "targetAge": 60,
+      "source": "household"
+    }
+  ],
+  "goalDiscountReal": {
+    "essential": 0.028,
+    "important": 0.04,
+    "aspirational": 0.07
+  },
+  "protection": {
+    "life": [
+      {
+        "member": "alex",
+        "amount": 750000,
+        "type": "term"
+      },
+      {
+        "member": "sam",
+        "amount": 400000,
+        "type": "term"
+      }
+    ],
+    "emergencyFund": {
+      "account": "demobank-savings-1002",
+      "status": "funded"
+    },
+    "gaps": "none reported",
+    "estateDocs": {
+      "will": "not started",
+      "beneficiaries": "done",
+      "guardianship": "not started"
+    }
+  },
+  "conventions": {
+    "homeSellingCost": 0.06,
+    "deferredAccountTaxRate": 0.2
+  },
+  "mortgage": {
+    "account": "demolender-mortgage-5001",
+    "payment": 2650,
+    "rate": 0.0575,
+    "source": "mortgage statement"
+  },
+  "plan": {
+    "expectedRealReturn": {
+      "education": 0.04,
+      "retirementAccumulation": 0.045,
+      "retirementDrawdown": 0.035,
+      "cash": 0.005
+    },
+    "retirementTaxRate": 0.15,
+    "retirementAccounts": [
+      "demobroker-ira-2002",
+      "demobroker-roth-2003",
+      "demoplan-401k-3001",
+      "sam-403b"
+    ],
+    "retirementContributions": [
+      {
+        "label": "Alex 401(k)",
+        "annual": 12000
+      },
+      {
+        "label": "Match",
+        "annual": 4720
+      },
+      {
+        "label": "Sam 403(b)",
+        "annual": 6000
+      }
+    ],
+    "emergencyFundMonths": 6,
+    "sinkingFunds": [
+      {
+        "label": "Property tax (two installments)",
+        "annual": 7800,
+        "note": "already inside monthly cash out"
+      }
+    ]
+  },
+  "cashFlow": {
+    "windowMonths": 6,
+    "inflowCategories": [
+      "Income"
+    ],
+    "inflowLabels": [
+      {
+        "match": "payroll",
+        "as": "Paychecks (actual)"
+      },
+      {
+        "match": "interest",
+        "as": "Interest"
+      }
+    ],
+    "excludeOneOff": [
+      "tax refund"
+    ],
+    "reclassify": [
+      {
+        "match": "county treasurer",
+        "as": "Property tax"
+      }
+    ],
+    "spendTransfers": [],
+    "groups": [
+      {
+        "label": "Housing",
+        "categories": [
+          "Mortgage",
+          "Property tax",
+          "Utilities"
+        ]
+      },
+      {
+        "label": "Kids",
+        "categories": [
+          "Childcare"
+        ]
+      },
+      {
+        "label": "Insurance",
+        "categories": [
+          "Insurance"
+        ]
+      },
+      {
+        "label": "Food",
+        "categories": [
+          "Groceries",
+          "Restaurants"
+        ]
+      },
+      {
+        "label": "Subscriptions and bills",
+        "categories": [
+          "Subscription"
+        ]
+      },
+      {
+        "label": "Shopping and other",
+        "categories": [
+          "Shopping",
+          "Transportation",
+          "Healthcare"
+        ]
+      }
+    ],
+    "lineNotes": {
+      "Mortgage": "Full payment, all of it cash out",
+      "Property tax": "Paid twice a year; averaged per month"
+    },
+    "estimatedInflows": [
+      "alex-bonus"
+    ],
+    "invisible": "All household accounts are synced except Sam's 403(b)."
+  },
+  "selfReported": [
+    {
+      "goal": "car",
+      "amount": 2400,
+      "asOf": "2026-12-20",
+      "source": "stated by Alex: moved to a savings jar at another bank"
+    }
+  ]
+}

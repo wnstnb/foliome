@@ -98,6 +98,29 @@ The user never needs to run encryption manually. The pre-flight runs before ever
 
 The runtime credential module (`scripts/credentials.js`) can ONLY fetch item IDs explicitly listed in `credential-map.json`. It never runs `bw list`, `bw search`, or browses the vault. The vault helper (`scripts/vault.js`) is the only place that searches the vault, and it only runs during setup — never during syncs.
 
+### Supply Chain Defense (Bitwarden CLI Version Gate)
+
+`scripts/check-bw-version.js` runs before any `bw` invocation in `credentials.js` and `vault.js`. It hard-blocks execution if the installed `@bitwarden/cli` version is on a known-compromised list and exits the process before the master password is handed to the binary.
+
+**Why a blocklist:** in April 2026 a malicious `@bitwarden/cli@2026.4.0` was distributed via npm for ~1.5 hours after attackers compromised Bitwarden's GitHub Actions publish pipeline (the "Shai-Hulud Third Coming" supply chain attack). The payload would have stolen any credentials the running process held, including the Bitwarden master password — which is the kind of failure no other defense in this document protects against, because the attack runs inside the trusted CLI itself. A version gate is the only meaningful mitigation: refuse to run a known-bad binary at all.
+
+**Behavior on match:**
+
+```
+═══════════════════════════════════════════════════════════════
+  SECURITY: Bitwarden CLI version on known-compromised list
+═══════════════════════════════════════════════════════════════
+  Installed: @bitwarden/cli@2026.4.0
+  ...
+  Refusing to run bw. Exiting.
+```
+
+The check is a hard `process.exit(1)` rather than a silent fallback to `.env` — silently degrading would risk the user not noticing a poisoned CLI, and a fallback to `.env` doesn't help if `bw` was already invoked once (the worm runs in-process during the very first `bw` call).
+
+**Manual run:** `node scripts/check-bw-version.js` to print the current state.
+
+**Updating the list:** add new known-bad versions to `BLOCKED_BW_VERSIONS` in `scripts/check-bw-version.js`. Hardcoded rather than config-driven on purpose — the blocklist is security-sensitive, and a code change requires PR review while a config edit could be silently bypassed.
+
 ### Vault CLI Helper
 
 `scripts/vault.js` — used during setup only, never during syncs:

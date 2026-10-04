@@ -4,6 +4,9 @@ import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
 
 export default defineConfig({
+  // Relative asset paths so the build resolves under both "/" (Telegram Mini App)
+  // and "/foliome/" (portal iframe, via the server-injected <base href>).
+  base: './',
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {

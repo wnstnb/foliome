@@ -1,0 +1,18 @@
+{
+  "_about": "Average annual cost of attendance (tuition and fees, housing, food, books, other) in today's dollars, for picking an education goal. National averages vary a lot by state and school, so let the household override per child.",
+  "asOf": "2026-10-03",
+  "source": "Rounded from College Board 'Trends in College Pricing' (2024-25 averages, total budget for on-campus students), adjusted to round numbers. Verify against current figures before relying on them.",
+  "years": 4,
+  "options": {
+    "public in-state":     30000,
+    "public out-of-state": 50000,
+    "private nonprofit":   63000,
+    "community college then transfer (avg/yr over 4)": 22000,
+    "half of public in-state": 15000
+  },
+  "stateOverrides": {
+    "CA": { "public in-state": 40000, "_note": "UC system total cost of attendance is roughly $40K/yr living on campus" }
+  },
+  "defaultOption": "public in-state",
+  "startAge": 18
+}

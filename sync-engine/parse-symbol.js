@@ -2,7 +2,7 @@
  * Symbol parser — extracts structured fields from option symbols.
  *
  * Handles three formats in priority order:
- * 1. OCC format (Schwab positions):   COPX  270115C00105000
+ * 1. OCC format (Schwab positions):   SPY   270115C00500000
  * 2. Schwab native (transactions):     SPXW_040224C5245
  * 3. Description-string fallback:      "AAPL Jan 2027 150 Call"
  * 4. Plain equity:                     QQQ, NVDA
@@ -30,7 +30,7 @@ function equityResult(symbol) {
 }
 
 /**
- * OCC format: COPX  270115C00105000
+ * OCC format: SPY   270115C00500000
  * Underlying: left-padded to 6 chars, trimmed. Date: YYMMDD. C/P. Strike: 8 digits / 1000.
  */
 function parseOCC(symbol) {

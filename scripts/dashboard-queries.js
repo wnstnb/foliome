@@ -58,7 +58,7 @@ function getOverview(dbPath) {
     const sr = db.prepare(`
       SELECT
         SUM(CASE WHEN amount > 0 AND category = 'Income' THEN amount ELSE 0 END) as income,
-        SUM(CASE WHEN amount < 0 AND category NOT IN ('Transfer', 'Income') THEN amount ELSE 0 END) as spending
+        SUM(CASE WHEN amount < 0 AND COALESCE(user_category, category, '') NOT IN ('Transfer', 'Income') THEN amount ELSE 0 END) as spending
       FROM transactions
       WHERE date >= date('now', 'start of month')
     `).get();
@@ -73,11 +73,17 @@ function getOverview(dbPath) {
     const schedulePath = path.join(__dirname, '..', 'config', 'payment-schedule.json');
     if (fs.existsSync(schedulePath)) {
       const schedule = JSON.parse(fs.readFileSync(schedulePath, 'utf8'));
+      // payment-schedule.json is { description, cards: [{ accountId, dueDay, ... }] }.
+      // Accept the legacy account_id-keyed map too, in case an older file is present.
+      const byAccount = Array.isArray(schedule.cards)
+        ? Object.fromEntries(schedule.cards.map(c => [c.accountId, c]))
+        : schedule;
       const now = new Date();
       alerts = creditBalances.map(b => {
-        const entry = schedule[b.account_id];
+        const entry = byAccount[b.account_id];
         if (!entry) return null;
-        const dueDay = entry.due_day;
+        const dueDay = entry.dueDay ?? entry.due_day;
+        if (!dueDay) return null;
         let dueDate = new Date(now.getFullYear(), now.getMonth(), dueDay);
         if (dueDate < now) dueDate = new Date(now.getFullYear(), now.getMonth() + 1, dueDay);
         const daysUntil = Math.ceil((dueDate - now) / (1000 * 60 * 60 * 24));
@@ -87,6 +93,9 @@ function getOverview(dbPath) {
           balance: b.balance,
           due_day: dueDay,
           days_until: daysUntil,
+          statement_balance: entry.lastStatementBalance ?? null,
+          minimum_payment: entry.minimumPayment ?? null,
+          autopay: entry.autopay ?? null,
         };
       }).filter(Boolean).sort((a, b) => a.days_until - b.days_until);
     }
@@ -169,7 +178,11 @@ function getSpending(dbPath, filters = {}) {
   const db = openDb(dbPath);
   const { from, to, accounts } = filters;
 
-  let where = ["category NOT IN ('Transfer', 'Income')", 'amount < 0'];
+  // Filter on the EFFECTIVE category, and give COALESCE a '' fallback: a row with no
+  // user_category AND no bank category yields NULL, and `NULL NOT IN (...)` is NULL —
+  // falsy — so every such row was silently dropped from spending regardless of how it
+  // had been classified. That is how 56 childcare payments ($58,255) stayed invisible.
+  let where = ["COALESCE(user_category, category, '') NOT IN ('Transfer', 'Income')", 'amount < 0'];
   const params = {};
 
   if (from) { where.push('date >= $from'); params.from = from; }
@@ -207,13 +220,14 @@ function getSpending(dbPath, filters = {}) {
 function getHoldings(dbPath) {
   const db = openDb(dbPath);
 
-  // Fetch latest holdings including new structured fields
+  // Fetch holdings from the most recent sync per account only
+  // This ensures sold positions don't persist from older syncs
   const holdings = db.prepare(`
     SELECT h.account_id, h.symbol, h.name, h.quantity, h.price, h.market_value, h.cost_basis,
            h.underlying, h.instrument_type, h.put_call, h.strike, h.expiry, h.multiplier
     FROM holdings h
-    INNER JOIN (SELECT account_id, symbol, MAX(synced_at) as ms FROM holdings GROUP BY account_id, symbol) m
-    ON h.account_id = m.account_id AND h.symbol = m.symbol AND h.synced_at = m.ms
+    INNER JOIN (SELECT account_id, MAX(synced_at) as ms FROM holdings GROUP BY account_id) latest
+    ON h.account_id = latest.account_id AND h.synced_at = latest.ms
     WHERE h.market_value != 0 OR h.quantity != 0
     ORDER BY h.market_value DESC
   `).all();
@@ -271,30 +285,81 @@ function getHoldings(dbPath) {
   return { holdings, groups, accounts, totalValue };
 }
 
-// getSubscriptions(dbPath) - recurring charges detected by pattern
+// getSubscriptions(dbPath) - all subscription-categorized charges
 function getSubscriptions(dbPath) {
   const db = openDb(dbPath);
 
-  const subscriptions = db.prepare(`
-    SELECT LOWER(SUBSTR(description, 1, 30)) as merchant,
-           COUNT(*) as occurrences,
-           AVG(amount) as avg_amount,
-           MAX(date) as last_charged,
-           SUM(amount) as total
+  // Normalize merchant names: strip addresses, project IDs, transaction numbers
+  const normalizeMerchant = (desc) => {
+    let m = desc.toLowerCase().trim();
+    // Strip common suffixes: addresses, IDs, transaction refs
+    m = m.replace(/\s+\d{3,}.*$/, '');           // trailing numbers (IDs, phone, zip)
+    m = m.replace(/\s+(one |)\d+\s+\w+\s+(way|st|street|pkwy|parkway|drive|ave).*$/i, ''); // addresses
+    m = m.replace(/\s+[a-z0-9]{5,8}\s+\d+\s+amphitheatre.*$/i, '');  // Google project IDs
+    m = m.replace(/\s+(web id|purchase|inst xfer)\s*.*$/i, '');        // PayPal suffixes
+    m = m.replace(/\s+\d+\s+n\s+gou.*$/i, '');   // Corporate Filings address
+    // Consolidate known merchants
+    if (m.includes('google') && m.includes('cloud')) return 'google cloud';
+    if (m.includes('google') && (m.includes('yt prime') || m.includes('youtube tv'))) return 'youtube tv / primetime';
+    if (m.includes('apple.com/bill') || m.includes('pp*apple.com')) return 'apple.com/bill';
+    if (m.includes('prime video')) return 'prime video channels';
+    if (m.includes('paypal') && m.includes('microsoft')) return 'microsoft (paypal)';
+    if (m.includes('paypal') && m.includes('google')) return 'google (paypal)';
+    if (m.includes('perplexity')) return 'perplexity ai';
+    if (m.includes('runway')) return 'runway';
+    if (m.includes('netflix')) return 'netflix';
+    if (m.includes('experian')) return 'experian';
+    if (m.includes('name.com')) return 'name.com';
+    if (m.includes('corporate filings')) return 'corporate filings';
+    if (m.includes('post-bridge')) return 'post-bridge';
+    if (m.includes('x corp')) return 'x (twitter)';
+    if (m.includes('microsoft') && m.includes('36')) return 'microsoft 365';
+    // Fallback: first 30 chars cleaned up
+    return m.substring(0, 30).replace(/\s+$/, '');
+  };
+
+  const rows = db.prepare(`
+    SELECT description, amount, date
     FROM transactions
     WHERE COALESCE(user_category, category) = 'Subscription'
       AND date >= date('now', '-90 days')
-    GROUP BY merchant
-    HAVING occurrences >= 2
-    ORDER BY avg_amount ASC
+    ORDER BY date DESC
   `).all();
 
-  const monthlyTotal = subscriptions.reduce((s, sub) => s + Math.abs(sub.avg_amount), 0);
+  // Group by normalized merchant
+  const grouped = {};
+  for (const row of rows) {
+    const merchant = normalizeMerchant(row.description);
+    if (!grouped[merchant]) grouped[merchant] = { merchant, occurrences: 0, total: 0, amounts: [], last_charged: row.date };
+    grouped[merchant].occurrences++;
+    grouped[merchant].total += row.amount;
+    grouped[merchant].amounts.push(row.amount);
+    if (row.date > grouped[merchant].last_charged) grouped[merchant].last_charged = row.date;
+  }
+
+  const subscriptions = Object.values(grouped).map(g => ({
+    merchant: g.merchant,
+    occurrences: g.occurrences,
+    avg_amount: g.total / g.occurrences,
+    last_charged: g.last_charged,
+    total: g.total,
+    recurring: g.occurrences >= 2,
+  })).sort((a, b) => a.avg_amount - b.avg_amount);
+
+  const monthlyTotal = subscriptions
+    .filter(s => s.recurring)
+    .reduce((s, sub) => s + Math.abs(sub.avg_amount), 0);
+
+  // One-time charges shown separately
+  const oneTimeTotal = subscriptions
+    .filter(s => !s.recurring)
+    .reduce((s, sub) => s + Math.abs(sub.total), 0);
 
   db.close();
   return {
     subscriptions,
     monthlyTotal,
+    oneTimeTotal,
     annualTotal: monthlyTotal * 12,
   };
 }
@@ -326,7 +391,7 @@ function getHealth(dbPath) {
       const sr = db.prepare(`
         SELECT
           SUM(CASE WHEN amount > 0 AND category = 'Income' THEN amount ELSE 0 END) as income,
-          SUM(CASE WHEN amount < 0 AND category NOT IN ('Transfer', 'Income') THEN amount ELSE 0 END) as spending
+          SUM(CASE WHEN amount < 0 AND COALESCE(user_category, category, '') NOT IN ('Transfer', 'Income') THEN amount ELSE 0 END) as spending
         FROM transactions
         WHERE strftime('%Y-%m', date) = $month
       `).get({ month: m.month });
@@ -364,7 +429,7 @@ function getBudgets(dbPath, configPath) {
            COUNT(*) as txn_count
     FROM transactions
     WHERE date >= date('now', 'start of month')
-      AND category NOT IN ('Transfer', 'Income')
+      AND COALESCE(user_category, category, '') NOT IN ('Transfer', 'Income')
       AND amount < 0
     GROUP BY 1
     ORDER BY spent ASC
@@ -377,12 +442,14 @@ function getBudgets(dbPath, configPath) {
     FROM transactions
     WHERE date >= date('now', 'start of month', '-1 month')
       AND date < date('now', 'start of month')
-      AND category NOT IN ('Transfer', 'Income')
+      AND COALESCE(user_category, category, '') NOT IN ('Transfer', 'Income')
       AND amount < 0
     GROUP BY 1
   `).all();
 
-  // All current-month transactions with account + category info (for scoped budgets)
+  // All current-month transactions with account + category info (for scoped budgets).
+  // Transfer/Income excluded to match the Transactions page — payments between own
+  // accounts (e.g., checking → credit card) and paychecks are never spending.
   const allTxns = db.prepare(`
     SELECT t.account_id, t.amount,
            COALESCE(t.user_category, t.category) as category,
@@ -391,6 +458,7 @@ function getBudgets(dbPath, configPath) {
             ORDER BY b.synced_at DESC LIMIT 1) as account_type
     FROM transactions t
     WHERE t.date >= date('now', 'start of month')
+      AND COALESCE(t.user_category, t.category, '') NOT IN ('Transfer', 'Income')
       AND t.amount < 0
   `).all();
 

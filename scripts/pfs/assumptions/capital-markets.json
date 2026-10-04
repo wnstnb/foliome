@@ -1,0 +1,109 @@
+{
+  "_about": "Real (after-inflation), median compound annual returns and annual volatility by asset class. Moderate long-run planning defaults, deliberately below the 1988-2026 US experience. Not a forecast; override in config/pfs-profile.json.",
+  "asOf": "2026-10-03",
+  "source": "Foliome defaults: moderate forward-looking real returns, deliberately below the 1988-2026 US experience. To be replaced by data-built defaults (TIPS yield, T-bills less inflation, dividend yield plus earnings growth).",
+  "correlationToEquity": "The simulation applies one shared market shock per year scaled by each class's volatility. Bonds and cash get a reduced loading (see equityLoading).",
+  "classes": {
+    "us-equity": {
+      "label": "US stocks (broad)",
+      "realReturn": 0.045,
+      "vol": 0.16,
+      "equityLoading": 1.0
+    },
+    "us-growth": {
+      "label": "US growth / Nasdaq-100",
+      "realReturn": 0.05,
+      "vol": 0.22,
+      "equityLoading": 1.0
+    },
+    "us-dividend": {
+      "label": "US dividend stocks",
+      "realReturn": 0.045,
+      "vol": 0.15,
+      "equityLoading": 1.0
+    },
+    "covered-call": {
+      "label": "Covered-call equity income",
+      "realReturn": 0.04,
+      "vol": 0.14,
+      "equityLoading": 1.0
+    },
+    "intl-equity": {
+      "label": "International developed",
+      "realReturn": 0.05,
+      "vol": 0.17,
+      "equityLoading": 1.0
+    },
+    "em-equity": {
+      "label": "Emerging markets",
+      "realReturn": 0.055,
+      "vol": 0.22,
+      "equityLoading": 1.0
+    },
+    "sector-equity": {
+      "label": "Sector / thematic stock fund",
+      "realReturn": 0.045,
+      "vol": 0.25,
+      "equityLoading": 1.0
+    },
+    "single-stock": {
+      "label": "Individual stock",
+      "realReturn": 0.045,
+      "vol": 0.35,
+      "equityLoading": 1.0
+    },
+    "reit": {
+      "label": "Real estate (REITs)",
+      "realReturn": 0.04,
+      "vol": 0.2,
+      "equityLoading": 0.8
+    },
+    "us-bonds": {
+      "label": "US investment-grade bonds",
+      "realReturn": 0.018,
+      "vol": 0.06,
+      "equityLoading": 0.1
+    },
+    "tips": {
+      "label": "Inflation-protected bonds",
+      "realReturn": 0.017,
+      "vol": 0.05,
+      "equityLoading": 0.1
+    },
+    "cash": {
+      "label": "Cash, T-bills, money market",
+      "realReturn": 0.005,
+      "vol": 0.01,
+      "equityLoading": 0.0
+    },
+    "gold": {
+      "label": "Gold / precious metals",
+      "realReturn": 0.01,
+      "vol": 0.15,
+      "equityLoading": 0.2
+    },
+    "target-date": {
+      "label": "Target-date / balanced fund",
+      "realReturn": 0.035,
+      "vol": 0.11,
+      "equityLoading": 0.7
+    },
+    "options": {
+      "label": "Options (excluded from projections)",
+      "realReturn": 0,
+      "vol": 0,
+      "equityLoading": 0,
+      "exclude": true
+    },
+    "unknown": {
+      "label": "Unclassified holding (treated as broad stock)",
+      "realReturn": 0.045,
+      "vol": 0.16,
+      "equityLoading": 1.0
+    }
+  },
+  "unknownAccountMix": {
+    "_note": "Used when an account has no holdings data (e.g. a 401(k) whose funds aren't synced).",
+    "class": "target-date"
+  }
+}

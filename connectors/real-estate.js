@@ -28,21 +28,39 @@ if (!ADDRESS) {
 const REFRESH_DAYS = 25; // Only re-estimate if last sync is older than this
 const forceRefresh = process.argv.includes('--force');
 
-// Check if we need to refresh
+// Check if we need to refresh.
+//
+// The staleness clock MUST measure when a VALUATION was last obtained, not when this
+// script last ran. `syncedAt` is stamped at scrape time, before the agent extracts any
+// value — so keying the guard on it lets a run that produced no valuation reset its own
+// clock for another REFRESH_DAYS. That is self-perpetuating: the estimate can never
+// recover, and the skip still reports success. Key on the valuation date instead.
 if (!forceRefresh) {
   const outputFile = path.join(OUTPUT_DIR, 'real-estate.json');
   if (fs.existsSync(outputFile)) {
     try {
       const existing = JSON.parse(fs.readFileSync(outputFile, 'utf-8'));
-      if (existing.syncedAt) {
-        const daysSinceSync = (Date.now() - new Date(existing.syncedAt).getTime()) / (24 * 60 * 60 * 1000);
-        if (daysSinceSync < REFRESH_DAYS) {
+
+      // An unconsumed pendingExtraction means the last scrape's page texts were never
+      // turned into a value. The stored balance is older than it looks — always refresh.
+      const hasUnconsumed = !!existing.pendingExtraction;
+
+      // Prefer the valuation timestamp the agent writes onto the balance row. Fall back
+      // to syncedAt only when no balance carries one (e.g. a first run).
+      const valuationAt = existing.balances?.[0]?.asOf || existing.syncedAt;
+
+      if (valuationAt && !hasUnconsumed) {
+        const daysSinceValuation = (Date.now() - new Date(valuationAt).getTime()) / (24 * 60 * 60 * 1000);
+        if (daysSinceValuation < REFRESH_DAYS) {
           const value = existing.balances?.[0]?.balance || 0;
-          console.log(`[real-estate] Last synced ${daysSinceSync.toFixed(1)} days ago — skipping (refresh after ${REFRESH_DAYS} days)`);
+          console.log(`[real-estate] Valued ${daysSinceValuation.toFixed(1)} days ago — skipping (refresh after ${REFRESH_DAYS} days)`);
           console.log(`[real-estate] Current estimate: $${value.toLocaleString()}`);
           console.log(`[real-estate] Use --force to override`);
           process.exit(0);
         }
+        console.log(`[real-estate] Valuation is ${daysSinceValuation.toFixed(1)} days old — refreshing`);
+      } else if (hasUnconsumed) {
+        console.log('[real-estate] Previous scrape was never extracted into a value — refreshing');
       }
     } catch {}
   }
@@ -180,7 +198,10 @@ async function main() {
   const output = {
     institution: 'real-estate',
     syncedAt: new Date().toISOString(),
-    balances: existingBalances, // Preserve previous values until agent extracts new ones
+    // Preserved values are carried forward ONLY so a failed extraction does not zero the
+    // asset. They are NOT a fresh valuation — each row keeps its original `asOf`, which is
+    // what the staleness guard above reads. Do not restamp `asOf` here.
+    balances: existingBalances,
     transactions: [],
     holdings: [],
     pendingExtraction: {

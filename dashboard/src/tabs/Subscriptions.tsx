@@ -64,38 +64,60 @@ export function Subscriptions() {
 
   if (error) return <EmptyState message={error} />;
   if (!data) return <div className="py-12 text-center t-caption text-[var(--text-muted)]">Loading...</div>;
-  if (data.subscriptions.length === 0) return <EmptyState message="No recurring charges detected" />;
+  if (data.subscriptions.length === 0) return <EmptyState message="No subscription charges found" />;
+
+  const recurring = data.subscriptions.filter(s => s.recurring);
+  const oneTime = data.subscriptions.filter(s => !s.recurring);
+
+  const renderSub = (sub: typeof data.subscriptions[0], showMonthly: boolean) => {
+    const amt = Math.round(Math.abs(showMonthly ? sub.avg_amount : sub.total));
+    return (
+      <div
+        key={sub.merchant}
+        className="flex items-center justify-between py-3 border-b border-[var(--border)]/50 last:border-b-0"
+      >
+        <div className="flex items-center gap-2.5">
+          <MerchantIcon merchant={sub.merchant} />
+          <div>
+            <p className="t-body font-medium">{titleCase(sub.merchant.trim())}</p>
+            <p className="t-caption text-[var(--text-muted)]">
+              {showMonthly ? `${sub.occurrences}x in 90d` : 'One-time'} · Last: {fmtDate(sub.last_charged)}
+            </p>
+          </div>
+        </div>
+        <div className="text-right">
+          <p className="t-value">${amt}{showMonthly ? '/mo' : ''}</p>
+          {showMonthly && (
+            <p className="t-caption text-[var(--text-muted)]">${(amt * 12).toLocaleString()}/yr</p>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="animate-fade-in">
-      <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-4 mb-3">
-        <div className="flex justify-between mb-3">
-          <p className="t-micro text-[var(--text-muted)]">Recurring Charges</p>
-          <span className="t-value">~${Math.round(data.monthlyTotal)}/mo</span>
+      {/* Recurring charges */}
+      {recurring.length > 0 && (
+        <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-4 mb-3">
+          <div className="flex justify-between mb-3">
+            <p className="t-micro text-[var(--text-muted)]">Recurring Charges</p>
+            <span className="t-value">~${Math.round(data.monthlyTotal)}/mo</span>
+          </div>
+          {recurring.map(sub => renderSub(sub, true))}
         </div>
-        {data.subscriptions.map(sub => {
-          const monthlyAmt = Math.round(Math.abs(sub.avg_amount));
-          const annualAmt = monthlyAmt * 12;
-          return (
-            <div
-              key={sub.merchant}
-              className="flex items-center justify-between py-3 border-b border-[var(--border)]/50 last:border-b-0"
-            >
-              <div className="flex items-center gap-2.5">
-                <MerchantIcon merchant={sub.merchant} />
-                <div>
-                  <p className="t-body font-medium">{titleCase(sub.merchant.trim())}</p>
-                  <p className="t-caption text-[var(--text-muted)]">Last: {fmtDate(sub.last_charged)}</p>
-                </div>
-              </div>
-              <div className="text-right">
-                <p className="t-value">${monthlyAmt}/mo</p>
-                <p className="t-caption text-[var(--text-muted)]">${annualAmt.toLocaleString()}/yr</p>
-              </div>
-            </div>
-          );
-        })}
-      </div>
+      )}
+
+      {/* One-time / infrequent charges */}
+      {oneTime.length > 0 && (
+        <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-4 mb-3">
+          <div className="flex justify-between mb-3">
+            <p className="t-micro text-[var(--text-muted)]">One-Time / Annual (last 90 days)</p>
+            <span className="t-value">${Math.round(data.oneTimeTotal)}</span>
+          </div>
+          {oneTime.map(sub => renderSub(sub, false))}
+        </div>
+      )}
 
       {/* Annual total warning */}
       <div
@@ -109,10 +131,10 @@ export function Subscriptions() {
           <span className="text-[var(--warning)] text-base">!</span>
           <div>
             <p className="t-body text-[var(--warning)] font-medium">
-              ~${Math.round(data.annualTotal).toLocaleString()} annually
+              ~${Math.round(data.annualTotal).toLocaleString()} annually (recurring only)
             </p>
             <p className="t-caption text-[var(--text-muted)]">
-              ${Math.round(data.monthlyTotal)}/month across {data.subscriptions.length} services
+              ${Math.round(data.monthlyTotal)}/month across {recurring.length} recurring + {oneTime.length} one-time
             </p>
           </div>
         </div>

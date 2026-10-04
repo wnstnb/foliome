@@ -1,0 +1,80 @@
+{
+  "_about": "US federal income and payroll tax parameters, approximate, for planning estimates.",
+  "year": 2026,
+  "source": "IRS Rev. Proc. 2025-32 inflation adjustments as understood (post-2025 tax law); SSA 2026 wage base. Verify each tax year.",
+  "mfj": {
+    "standardDeduction": 32200,
+    "brackets": [
+      [
+        24800,
+        0.1
+      ],
+      [
+        100800,
+        0.12
+      ],
+      [
+        211400,
+        0.22
+      ],
+      [
+        403550,
+        0.24
+      ],
+      [
+        512450,
+        0.32
+      ],
+      [
+        768700,
+        0.35
+      ],
+      [
+        null,
+        0.37
+      ]
+    ]
+  },
+  "single": {
+    "standardDeduction": 16100,
+    "brackets": [
+      [
+        12400,
+        0.1
+      ],
+      [
+        50400,
+        0.12
+      ],
+      [
+        105700,
+        0.22
+      ],
+      [
+        201775,
+        0.24
+      ],
+      [
+        256225,
+        0.32
+      ],
+      [
+        640600,
+        0.35
+      ],
+      [
+        null,
+        0.37
+      ]
+    ]
+  },
+  "childTaxCredit": 2200,
+  "fica": {
+    "ssRate": 0.062,
+    "ssWageBase": 184500,
+    "medicareRate": 0.0145,
+    "addlMedicareRate": 0.009,
+    "addlMedicareThreshold": 250000
+  },
+  "addlMedicareThresholdSingle": 200000
+}

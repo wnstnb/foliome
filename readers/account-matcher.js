@@ -14,6 +14,16 @@ const path = require('path');
 
 const ACCOUNTS_PATH = path.join(__dirname, '..', 'config', 'accounts.json');
 
+// accounts.json does not exist until the first institution is set up; treat
+// a missing or unreadable registry as empty rather than crashing the sync.
+function readAccounts() {
+  try {
+    return JSON.parse(fs.readFileSync(ACCOUNTS_PATH, 'utf-8'));
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Match a display name (e.g., "TOTAL CHECKING (...1234)") to a known account.
  *
@@ -74,8 +84,8 @@ function matchAccount(displayName, accountList) {
 function addAlias(institution, accountId, newAlias) {
   if (!newAlias || !newAlias.trim()) return false;
 
-  const allAccounts = JSON.parse(fs.readFileSync(ACCOUNTS_PATH, 'utf-8'));
-  const instAccounts = allAccounts[institution];
+  const allAccounts = readAccounts();
+  const instAccounts = allAccounts?.[institution];
   if (!instAccounts) return false;
 
   const account = instAccounts.accounts.find(a => a.accountId === accountId);
@@ -104,8 +114,8 @@ function addAlias(institution, accountId, newAlias) {
  * @param {string} last4
  */
 function setLast4(institution, accountId, last4) {
-  const allAccounts = JSON.parse(fs.readFileSync(ACCOUNTS_PATH, 'utf-8'));
-  const account = allAccounts[institution]?.accounts?.find(a => a.accountId === accountId);
+  const allAccounts = readAccounts();
+  const account = allAccounts?.[institution]?.accounts?.find(a => a.accountId === accountId);
   if (!account) return;
 
   if (account.last4 !== last4) {

@@ -1,0 +1,1 @@
+{ "label": "Retire 5 years earlier", "description": "Example scenario: change any profile value with a dotted path", "set": { "retirement.base": 60 } }

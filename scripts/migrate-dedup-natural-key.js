@@ -142,7 +142,7 @@ function main() {
     // labeled pending even after the transaction fully settled. Promote those to posted.
     //
     // But preserve real pending rows from institutions that emit an actual status field
-    // (e.g. Mercury's `status: 'pending'`/`'sent'`). Detect by scanning the raw JSON for
+    // (e.g. an API export's `status: 'pending'`/`'sent'`). Detect by scanning the raw JSON for
     // a status-like value — if nothing in raw says pending, it's fake-pending.
     console.log('[migrate] Phase 3: fixing fake-pending status…');
     const candidates = db.prepare(`

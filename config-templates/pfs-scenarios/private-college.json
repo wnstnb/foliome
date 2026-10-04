@@ -1,0 +1,1 @@
+{ "label": "Private college for both", "description": "Child 1 attends a private university", "goalsPatch": [ { "id": "edu-kid1", "selected": "private" }, { "id": "edu-kid1", "selected": "private" } ] }

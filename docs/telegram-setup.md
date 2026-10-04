@@ -69,6 +69,24 @@ Flags:
 - Send charts/images back to Telegram
 - Serve the dashboard Mini App (7 tabs + wiki browser)
 
+## Startup hook and supervisor (optional)
+
+For an always-on agent, two pieces keep sessions continuous:
+
+- **SessionStart hook.** Add this to `.claude/settings.json` so every session runs `scripts/agent-startup.sh`, which starts the dashboard server, injects `data/agent-handoff.md`, and lists schedules to register:
+
+  ```json
+  {
+    "hooks": {
+      "SessionStart": [
+        { "hooks": [{ "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/agent-startup.sh\"" }] }
+      ]
+    }
+  }
+  ```
+
+- **Supervisor loop.** `scripts/telegram-agent.sh` launches Claude Code with the Telegram channel and relaunches it whenever the session exits, so a crash or a deliberate restart costs a few seconds, not a dead bot. Run it under your init system (systemd, launchd, or a login item).
+
 ## Important Notes
 
 - **One bot token, one consumer.** Only one process can poll a given Telegram bot token at a time.

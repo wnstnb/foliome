@@ -8,6 +8,7 @@
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const { checkBwVersion } = require('./check-bw-version');
 
 const CREDENTIAL_MAP_PATH = path.join(__dirname, '..', 'config', 'credential-map.json');
 
@@ -16,15 +17,12 @@ let bwSession = null;
 let bwAvailable = null; // null = not checked, true/false after check
 
 /**
- * Check if the Bitwarden CLI is installed.
+ * Check if the Bitwarden CLI is installed AND not on the version blocklist.
+ * Returns false if bw isn't on PATH. Hard-exits the process if bw is installed
+ * but its version is known-compromised (see check-bw-version.js).
  */
 function isBwInstalled() {
-  try {
-    execSync('bw --version', { stdio: 'pipe', timeout: 5000 });
-    return true;
-  } catch {
-    return false;
-  }
+  return checkBwVersion() !== null;
 }
 
 /**

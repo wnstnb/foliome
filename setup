@@ -242,7 +242,7 @@ if command -v lit >/dev/null 2>&1; then
   ok "LiteParse CLI available"
 else
   warn "LiteParse CLI (lit) not found"
-  info "Required for PDF statement parsing (Pattern C: PayPal, US Bank, etc.)"
+  info "Required for PDF statement parsing (Pattern C: banks that only offer PDF statements)"
   info "Download: https://github.com/nicholasgasior/lit/releases"
   info "Place the 'lit' binary on your PATH (e.g. /usr/local/bin/lit)"
   ACTIONS_NEEDED+=("Install LiteParse CLI for PDF bank support: https://github.com/nicholasgasior/lit/releases")

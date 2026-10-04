@@ -1,0 +1,22 @@
+{
+  "_about": "Household-level default assumptions. All real (after inflation).",
+  "asOf": "2026-10-03",
+  "wageGrowthReal": {
+    "_note": "Typical real-wage curve: earnings rise faster early in a career and plateau in the early-mid 50s.",
+    "default": [ { "toAge": 50, "rate": 0.02 }, { "toAge": 55, "rate": 0.005 }, { "toAge": 200, "rate": 0 } ],
+    "steadyStepPay": [ { "toAge": 200, "rate": 0.0075 } ]
+  },
+  "incomeStability": {
+    "_note": "Premium over the real risk-free rate used to value future earnings. Ask: 'How steady is this income?'",
+    "very-steady": { "premium": 0.0075, "examples": "nursing, teaching, government, regulated functions; pay rises in steps" },
+    "typical":     { "premium": 0.0125, "examples": "salaried private-sector role at an established employer" },
+    "variable":    { "premium": 0.025,  "examples": "commission, early-stage startup, cyclical industry" },
+    "bonus":       { "premium": 0.035,  "examples": "discretionary or performance bonus, valued separately from base" }
+  },
+  "riskFreeFallback": { "nominal10y": 0.0525, "breakevenInflation": 0.024, "asOf": "2026-10-01" },
+  "health": { "preMedicarePerPersonYear": 12000, "medicareAge": 65, "source": "placeholder (~$1K/mo per person for marketplace coverage before Medicare); override with a real quote" },
+  "retirement": { "planningHorizonAge": 95, "withdrawalSuccessTarget": 0.9, "defaultScenarios": [-5, 0, 2] },
+  "childcare": { "endsAtYoungestAge": 13, "_note": "default: paid care until the youngest is 13; ask to confirm" },
+  "emergencyFundMonths": 6,
+  "glide": { "_note": "Default mix at retirement if the household hasn't chosen one.", "atRetirement": { "us-equity": 0.6, "us-bonds": 0.3, "cash": 0.1 } }
+}

@@ -1,0 +1,49 @@
+{
+  "_about": "California personal income tax parameters, approximate.",
+  "state": "CA",
+  "year": 2025,
+  "source": "FTB 2025 tax rate schedules as understood; 2026 not yet published. SDI rate 2026.",
+  "mfj": {
+    "standardDeduction": 11080,
+    "brackets": [
+      [
+        22158,
+        0.01
+      ],
+      [
+        52532,
+        0.02
+      ],
+      [
+        82904,
+        0.04
+      ],
+      [
+        115084,
+        0.06
+      ],
+      [
+        145448,
+        0.08
+      ],
+      [
+        742958,
+        0.093
+      ],
+      [
+        891542,
+        0.103
+      ],
+      [
+        1485906,
+        0.113
+      ],
+      [
+        null,
+        0.123
+      ]
+    ],
+    "exemptionCredits": 1000
+  },
+  "sdiRate": 0.013
+}

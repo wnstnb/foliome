@@ -418,9 +418,14 @@ const RESULT_DIR = path.join(__dirname, '..', 'data', 'sync-output');
  * Write a structured result file for sync-all.js to read.
  */
 function writeResultFile(institution, taskResults, errors) {
-  const hasOk = Object.values(taskResults).includes('ok');
-  const hasFailed = Object.values(taskResults).includes('failed');
-  const status = hasFailed ? (hasOk ? 'partial' : 'failed') : 'ok';
+  const values = Object.values(taskResults);
+  const hasOk = values.includes('ok');
+  const hasFailed = values.includes('failed');
+  // A task that ran but covered only some of its accounts is `partial`, and must
+  // NOT roll up to `ok` — that is exactly how Capital One reported green for four
+  // months while reading 1 of 5 accounts. See patterns/capital-one-per-account-download-silent.md
+  const hasPartial = values.includes('partial');
+  const status = hasFailed ? (hasOk || hasPartial ? 'partial' : 'failed') : (hasPartial ? 'partial' : 'ok');
 
   const resultFile = path.join(RESULT_DIR, `${institution}.result.json`);
   fs.writeFileSync(resultFile, JSON.stringify({
@@ -558,8 +563,21 @@ async function main() {
           output.pendingExtraction = output.pendingExtraction || {};
           output.pendingExtraction.pdfTexts = txnResult.pendingExtraction.pdfTexts;
         }
-        taskResults.transactions = 'ok';
-        console.log(`[${institution}] Transactions: ${output.transactions.length} total`);
+        const cov = txnResult.coverage;
+        if (cov && cov.failed && cov.failed.length > 0) {
+          taskResults.transactions = 'partial';
+          const detail = cov.failed.map(f => `${f.accountId} (${f.reason})`).join('; ');
+          errors.push({
+            task: 'transactions',
+            category: 'coverage',
+            message: `Read ${cov.succeeded}/${cov.attempted} accounts. No transactions for: ${detail}`,
+            accounts: cov.failed,
+          });
+          console.log(`[${institution}] Transactions: ${output.transactions.length} total — PARTIAL, ${cov.succeeded}/${cov.attempted} accounts read`);
+        } else {
+          taskResults.transactions = 'ok';
+          console.log(`[${institution}] Transactions: ${output.transactions.length} total`);
+        }
       } else {
         taskResults.transactions = 'failed';
         if (taskCtx._error) errors.push(taskCtx._error);

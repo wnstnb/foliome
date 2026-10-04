@@ -26,8 +26,8 @@ The brief draws from three sources:
 Read the agent's financial memory wiki at `data/wiki/`:
 - Read `data/wiki/index.md` to discover all active pages
 - Read goal pages (`data/wiki/goals/`) for savings targets, progress, deadlines
-- Read preference pages (`data/wiki/preferences/`) for spending intentions
-- Read concern pages (`data/wiki/concerns/`) for balance worries, spending alerts
+- Read decision pages (`data/wiki/decisions/`) for spending intentions and rules the user set
+- Read standing finding pages (`data/wiki/findings/`, `status: standing`) for balance worries and open `## Open` items. Skip refuted and superseded findings
 - Read context pages (`data/wiki/context/`) for life events, pay schedule
 
 If the wiki is empty (no pages in index), generate a data-only brief — no warning banner needed. An empty wiki just means the agent hasn't captured any context yet.
@@ -58,19 +58,47 @@ Key data points:
 - `config/budgets.json` — monthly budget limits per category (already included in `getBudgets()`)
 - `config/payment-schedule.json` — credit card due dates (already included in `getOverview()`)
 
+### 4. Thesis pulse (optional)
+
+If `scripts/commodity-pulse.js` exists, run it for investment-thesis signals. It is a personal add-on the user maintains, not part of the core install, so skip this step when the script is missing.
+
+```javascript
+const fs = require('fs');
+const pulse = fs.existsSync('scripts/commodity-pulse.js')
+  ? JSON.parse(require('child_process').execSync('node scripts/commodity-pulse.js').toString())
+  : null;
+```
+
+Key data points:
+- **Positions** — all holdings from the DB with price, P&L, gain%, portfolio%, distance to exit levels
+- **Macro signals** — the series and thresholds the script defines (e.g. a commodity spot price, the dollar index), with bullish/warning levels
+- **Momentum** — 5-day and 20-day rate of change for those signals
+- **Alerts** — threshold crossings flagged automatically
+
+The tickers, thresholds and current thesis live in the script's header comment, not here, so the brief always follows the script.
+
+Include a `thesis_pulse` section in the brief whenever the script returns data. Surface alerts prominently.
+
+The pulse also returns:
+- **News headlines** (`tier3.news`) — 3 recent articles per held ticker + the script's macro watchlist. Include notable headlines in the brief, especially if they relate to thesis catalysts or invalidation signals. Ingest significant articles into the wiki via `scripts/wiki-ingest.js`.
+- **Intraday moves** (`tier3.intradayMoves`) — tickers with >3% daily moves. These generate automatic alerts. Flag any move >5% prominently.
+
 ## Brief Composition
 
 ### Greeting
 
-**Do not guess the day of the week.** Compute it programmatically:
+**Do not guess the day of the week.** Compute it programmatically and use the result verbatim:
 
 ```javascript
-const now = new Date();
-const greeting = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+// MUST specify timeZone to avoid UTC-vs-local mismatches
+const greeting = new Date().toLocaleDateString('en-US', {
+  weekday: 'long', month: 'long', day: 'numeric',
+  timeZone: 'America/Los_Angeles'
+});
 // e.g. "Saturday, April 11"
 ```
 
-Use this computed value for the `greeting` field. LLMs are unreliable at day-of-week calculations.
+Use this computed value **exactly as returned** for the `greeting` field. Do not modify the day name, do not substitute a different date, and do not rely on LLM knowledge of which day a date falls on — LLMs are unreliable at day-of-week calculations. If the code says Saturday, the greeting must say Saturday.
 
 ### Headline
 
@@ -98,9 +126,10 @@ Include sections based on available data and memories. Order by relevance:
 3. **recent_activity** — notable transactions from last 24-48 hours. Not all — just what's worth mentioning.
 4. **upcoming** — payments due in the next 7 days from `overview.alerts`. Include `payments` array.
 5. **concern** — if wiki has active concern pages and the relevant account balance triggers it.
-6. **portfolio** — if investment accounts exist, top-level value change.
-7. **account_health** — sync freshness, any warnings.
-8. **insight** — any pattern the agent notices (unusual spending, recurring charge changes, etc.)
+6. **thesis_pulse** — thesis monitoring from `scripts/commodity-pulse.js`, when that script exists. Show positions, the macro signals, momentum, and any threshold alerts. Include when investment positions exist.
+7. **portfolio** — if investment accounts exist, top-level value change.
+8. **account_health** — sync freshness, any warnings.
+9. **insight** — any pattern the agent notices (unusual spending, recurring charge changes, etc.)
 
 ### Prose Style
 
@@ -214,7 +243,7 @@ When the wiki has no pages, the brief is data-only:
 
 ## Example Brief JSON (With Wiki Pages)
 
-When the wiki has goals and preferences:
+When the wiki has goals and decisions:
 
 ```json
 {
@@ -281,6 +310,7 @@ When the wiki has goals and preferences:
 | `recent_activity` | title, body | transactions[] |
 | `upcoming` | title, body | payments[] |
 | `concern` | title, body | account |
+| `thesis_pulse` | title, body | positions, copper, dxy, momentum, alerts[] |
 | `portfolio` | title, body | — |
 | `account_health` | title, body | — |
 | `insight` | title, body | — |

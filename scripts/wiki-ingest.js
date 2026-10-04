@@ -1,5 +1,6 @@
 /**
- * wiki-ingest.js — Content ingestion for wiki articles (tweets, YouTube, URL validation)
+ * wiki-ingest.js — Content ingestion for wiki source pages (tweets, YouTube, URL validation).
+ * Pages written from it go in data/wiki/sources/ with type: source (rules: docs/wiki.md).
  *
  * Dual-use: importable functions + CLI subcommands.
  *

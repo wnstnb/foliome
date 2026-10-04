@@ -50,14 +50,16 @@ export function Overview({ onAccountClick, onKPIClick }: OverviewProps) {
     return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
   });
 
-  // Find stale institutions (>48h)
-  const staleInstitutions = new Map<string, number>();
+  // Find stale institutions (>48h) — use most recent balance per institution
+  const institutionFreshest = new Map<string, number>();
   for (const b of data.balances) {
     const age = staleness(b.synced_at);
-    if (age.level === 'old') {
-      const existing = staleInstitutions.get(b.institution);
-      if (!existing || age.hours > existing) staleInstitutions.set(b.institution, age.hours);
-    }
+    const existing = institutionFreshest.get(b.institution);
+    if (!existing || age.hours < existing) institutionFreshest.set(b.institution, age.hours);
+  }
+  const staleInstitutions = new Map<string, number>();
+  for (const [inst, hours] of institutionFreshest) {
+    if (hours > 48) staleInstitutions.set(inst, hours);
   }
 
   return (

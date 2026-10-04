@@ -1,0 +1,29 @@
+{
+  "_about": "Ticker → asset class (keys in capital-markets.json). Unknown tickers fall back to nameKeywords on the holding's name, then 'unknown'. Add freely.",
+  "asOf": "2026-10-03",
+  "tickers": {
+    "VTI": "us-equity", "ITOT": "us-equity", "SCHB": "us-equity", "SPY": "us-equity", "VOO": "us-equity", "IVV": "us-equity", "SPLG": "us-equity", "FXAIX": "us-equity", "FSKAX": "us-equity", "SWTSX": "us-equity", "SWPPX": "us-equity", "VTSAX": "us-equity", "VFIAX": "us-equity", "RSP": "us-equity", "IWM": "us-equity", "VB": "us-equity",
+    "QQQ": "us-growth", "QQQM": "us-growth", "VUG": "us-growth", "SCHG": "us-growth", "IWF": "us-growth", "MGK": "us-growth",
+    "SCHD": "us-dividend", "VYM": "us-dividend", "DGRO": "us-dividend", "VIG": "us-dividend", "HDV": "us-dividend", "NOBL": "us-dividend",
+    "JEPQ": "covered-call", "JEPI": "covered-call", "QYLD": "covered-call", "QYLG": "covered-call", "XYLD": "covered-call", "DIVO": "covered-call", "SPYI": "covered-call",
+    "VXUS": "intl-equity", "VEA": "intl-equity", "IEFA": "intl-equity", "EFA": "intl-equity", "SCHF": "intl-equity", "FTIHX": "intl-equity", "VTIAX": "intl-equity",
+    "VWO": "em-equity", "IEMG": "em-equity", "EEM": "em-equity", "SCHE": "em-equity",
+    "VNQ": "reit", "SCHH": "reit", "XLRE": "reit",
+    "BND": "us-bonds", "AGG": "us-bonds", "SCHZ": "us-bonds", "FXNAX": "us-bonds", "VBTLX": "us-bonds", "IEF": "us-bonds", "TLT": "us-bonds", "BNDX": "us-bonds",
+    "TIP": "tips", "SCHP": "tips", "VTIP": "tips",
+    "SGOV": "cash", "BIL": "cash", "SHV": "cash", "USFR": "cash", "TFLO": "cash", "SWVXX": "cash", "SPAXX": "cash", "VMFXX": "cash", "FDRXX": "cash", "SNSXX": "cash",
+    "GLD": "gold", "IAU": "gold", "SLV": "gold", "GLDM": "gold",
+    "COPX": "sector-equity", "URA": "sector-equity", "XLE": "sector-equity", "XLK": "sector-equity", "SMH": "sector-equity", "SOXX": "sector-equity", "ARKK": "sector-equity", "SPCX": "sector-equity"
+  },
+  "nameKeywords": [
+    { "match": "target|retirement 20|lifepath|freedom 20", "class": "target-date" },
+    { "match": "money market|treasury bill|government cash|sweep", "class": "cash" },
+    { "match": "bond|income fund|aggregate|treasury", "class": "us-bonds" },
+    { "match": "international|intl|developed|ex-us", "class": "intl-equity" },
+    { "match": "emerging", "class": "em-equity" },
+    { "match": "dividend", "class": "us-dividend" },
+    { "match": "nasdaq|growth", "class": "us-growth" },
+    { "match": "s&p 500|total stock|total market|index", "class": "us-equity" }
+  ],
+  "instrumentRules": { "OPTION": "options", "EQUITY": "single-stock", "MUTUAL_FUND": "unknown", "ETF": "unknown" }
+}

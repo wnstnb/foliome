@@ -23,6 +23,7 @@ const fs = require('fs');
 const path = require('path');
 const { getPendingRequests, submitCode } = require('./mfa-bridge');
 const telegram = require('../scripts/telegram-notify');
+const { checkBwVersion } = require('../scripts/check-bw-version');
 
 const INSTITUTIONS_DIR = path.join(__dirname, 'institutions');
 const CONNECTORS_DIR = path.join(__dirname, '..', 'connectors');
@@ -38,15 +39,19 @@ const banksFilter = process.argv.includes('--banks')
 const runImport = process.argv.includes('--import');
 const runClassify = process.argv.includes('--classify');
 
-// Discover all configured browser reader institutions
-const browserInstitutions = fs.readdirSync(INSTITUTIONS_DIR)
-  .filter(f => f.endsWith('.js') && !f.includes('learned'))
-  .map(f => f.replace('.js', ''));
-
 // Discover API connectors — any .js file in connectors/ (standalone scripts, not modules)
 const apiConnectors = fs.readdirSync(CONNECTORS_DIR)
   .filter(f => f.endsWith('.js'))
   .map(f => f.replace('.js', ''));
+
+// Discover browser reader institutions. When a bank has both an API connector and
+// a browser config (e.g. an API bank that keeps a browser config as a fallback), prefer the
+// API connector and skip the browser one — otherwise the bank runs in both phases
+// and the redundant browser pass fails fatal on every sync.
+const browserInstitutions = fs.readdirSync(INSTITUTIONS_DIR)
+  .filter(f => f.endsWith('.js') && !f.includes('learned'))
+  .map(f => f.replace('.js', ''))
+  .filter(b => !apiConnectors.includes(b));
 
 const results = [];
 
@@ -74,6 +79,8 @@ function runBank(bank, isApi = false) {
 
     console.log(`[sync] Starting ${bank}${isApi ? ' (API)' : ''}...`);
 
+    let watchdog;
+
     const child = spawn('node', args, {
       cwd: path.join(__dirname, '..'),
       env: process.env,
@@ -86,17 +93,28 @@ function runBank(bank, isApi = false) {
       // Print key lines
       text.split('\n').forEach(line => {
         const l = line.trim();
-        if (l.includes('Done.') || l.includes('✓') || l.includes('Error') || l.includes('MFA') || l.includes('balances') || l.includes('transactions')) {
+        if (l.includes('Done.') || l.includes('✓') || l.includes('Error') || l.includes('MFA') || l.includes('balances') || l.includes('transactions')
+            || l.includes('PARTIAL') || l.includes('Could not') || l.includes('not found') || l.includes('skipping')) {
           console.log(`  [${bank}] ${l}`);
         }
       });
     });
 
+    // console.warn/console.error write to stderr. This used to accumulate into
+    // `output` and never print, so every reader warning — "No file downloaded for
+    // <account>", "Download link not found" — was invisible in the sync log while
+    // the summary still printed a green check. Warnings are now surfaced.
     child.stderr.on('data', (data) => {
-      output += data.toString();
+      const text = data.toString();
+      output += text;
+      text.split('\n').forEach(line => {
+        const l = line.trim();
+        if (l) console.log(`  [${bank}] ⚠ ${l}`);
+      });
     });
 
     child.on('close', (code) => {
+      clearTimeout(watchdog);
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
       const outputFile = path.join(OUTPUT_DIR, `${bank}.json`);
       const resultFile = path.join(OUTPUT_DIR, `${bank}.result.json`);
@@ -146,8 +164,10 @@ function runBank(bank, isApi = false) {
       }
     });
 
-    // Kill after 10 minutes
-    setTimeout(() => {
+    // Kill after 10 minutes. Cleared in the 'close' handler so a bank that
+    // finished normally cannot later push a phantom 'timeout' result (and so
+    // the timer stops holding the event loop open after the sync is done).
+    watchdog = setTimeout(() => {
       child.kill();
       results.push({ bank, status: 'timeout', elapsed: '600s' });
       console.log(`[sync] ✗ ${bank}: timeout`);
@@ -289,10 +309,10 @@ async function pollForAdaptiveRequests(expectedBanks, timeoutMs = 300000) {
  * Sets BW_SESSION in process.env — child processes inherit it and skip login/unlock.
  */
 function preAuthBitwarden() {
-  try {
-    execSync('bw --version', { stdio: 'pipe', timeout: 5000 });
-  } catch {
-    return; // bw CLI not installed — credentials.js will fall back to .env
+  // checkBwVersion exits the process if bw is on the known-compromised list.
+  // Returns null if bw isn't installed — fall through to .env in that case.
+  if (checkBwVersion() === null) {
+    return;
   }
 
   const clientId = process.env.BW_CLIENTID;
@@ -372,7 +392,7 @@ async function main() {
     }
     await runBank(bankFilter, isApi);
   } else if (banksFilter) {
-    // Multi-bank filter mode (e.g., --banks schwab,mercury)
+    // Multi-bank filter mode (e.g., --banks chase,capital-one)
     const filteredApi = apiConnectors.filter(b => banksFilter.includes(b));
     const filteredBrowser = browserInstitutions.filter(b => banksFilter.includes(b));
     const unknown = banksFilter.filter(b => !apiConnectors.includes(b) && !browserInstitutions.includes(b));

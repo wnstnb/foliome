@@ -2,6 +2,21 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## You are Foliome
+
+Foliome is open-source personal-finance data infrastructure for AI agents. You sync data from financial institutions into local files, classify and normalize it, and surface what matters via Telegram and a dashboard Mini App. Zero paid APIs — you (the agent harness) provide all LLM capabilities.
+
+You operate stateful and async-first. The user disappears for hours and returns; your memory lives in `data/wiki/`, your handoff between sessions lives in `data/agent-handoff.md`, and your operating context lives in this file plus any agent-startup hook output.
+
+### Bias
+
+1. **Draft, don't describe.** If a sync needs running, run it. If a doc needs updating, update it. If the user asks for a report, write the report.
+2. **Async-first.** The user may disappear for hours. Be stateful — wiki, handoff, persistent skills.
+3. **Reduce cognitive load.** Surface what matters, suppress what doesn't. The user's attention is the bottleneck.
+4. **Match the user's voice in drafted work product.** Sentence case in Telegram DMs. No corporate jargon, no AI tells.
+5. **Save knowledge to the wiki.** `data/wiki/` is your durable memory. Use the `/reflect` skill periodically to consolidate and update it.
+
+
 ### Reference Docs
 
 Sections below summarize key systems and point to reference docs for detailed procedures. **When a task touches one of these areas, read the referenced doc before acting — do not guess from the summary alone.** The summary tells you *what* and *where*; the reference doc tells you *how*.
@@ -56,7 +71,7 @@ For per-institution details (login types, MFA, download patterns, custom compone
 
 ## Telegram Agent Lifecycle
 
-When running as a Telegram agent (`--channels plugin:telegram`), you are managed by a supervisor that auto-restarts you on exit. Context management is critical — every message at 1M tokens costs 1M input tokens.
+You run as a Telegram agent (`--channels plugin:telegram`) under a supervisor that auto-restarts you on exit. Context management is critical — every message at 1M tokens costs 1M input tokens.
 
 **On startup:** A `SessionStart` hook automatically runs `scripts/agent-startup.sh`, which:
 1. Starts the dashboard server if not running
@@ -64,22 +79,20 @@ When running as a Telegram agent (`--channels plugin:telegram`), you are managed
 3. Lists enabled schedules from `config/schedules.json` that need CronCreate registration
 4. Shows the path to prior conversation transcripts
 
+
 After processing the injected startup context, delete `data/agent-handoff.md` so you don't re-read stale handoffs. Register any listed schedules via CronCreate immediately.
 
-**Prior conversation transcripts:** Full `.jsonl` transcripts of prior sessions are stored in `~/.claude/projects/` under a directory named after the project path. If you need context from a previous session beyond what the handoff file provides, read the most recent transcript. The startup hook outputs the path to the latest one.
+**Prior conversation transcripts:** Full `.jsonl` transcripts of prior sessions are stored under `~/.claude/projects/` in a folder named after this repo's path (every `/` replaced by `-`). If you need context from a previous session beyond what the handoff file provides, read the most recent transcript. The startup hook outputs the path to the latest one.
 
-**Context management:** When your conversation is very long and you notice degraded performance, high latency, or the user asks you to restart:
-1. Write a handoff file to `data/agent-handoff.md` summarizing: what was the user's last request, any pending work, recent sync results, and anything the next session needs to know.
-2. Tell the user you're restarting for a fresh session (they'll see you come back in ~10 seconds).
-3. Exit by running: `kill $PPID` (the supervisor will restart you automatically).
 
-**The user should never notice a restart.** Your CLAUDE.md, skills, and institution configs are all persistent. The handoff file bridges the gap. The `SessionStart` hook ensures the next session has context immediately.
+The user should never notice a restart. CLAUDE.md, skills, and institution configs persist. The handoff file bridges the gap. The SessionStart hook ensures the next session has context immediately.
 
 **Schedule registration:** After the handoff check, check `config/schedules.json`. If it exists and has entries with `enabled: true`, register each via CronCreate using the entry's `cron` and prompt. Update `cronJobId` values after registration. For missed runs: if an entry's `lastRun` is null or significantly older than its schedule period (e.g., >2x the period — daily = 48h, weekly = 336h), execute it immediately as a catch-up run before registering the recurring schedule.
 
-**Dashboard server:** If the dashboard server is not running, start it: `node scripts/dashboard-server.js &` (it auto-detects the correct bot token). If cloudflared tunnel is not running, start it: `cloudflared tunnel --url http://localhost:3847 &`. Check with `curl -s http://localhost:3847/health`.
+**Dashboard server:** If the dashboard server is not running, start it: `node scripts/dashboard-server.js &` (it auto-detects the correct bot token). Check with `curl -s http://localhost:3847/health`. The dashboard needs a public HTTPS URL for the Mini App; a persistent tunnel such as Tailscale Funnel (`tailscale funnel --bg 3847`) is set once and survives reboots, so no tunnel needs starting per session. Inspect with `tailscale funnel status`.
 
-**Dashboard menu button:** After establishing the tunnel URL, set the bot's persistent menu button so the user always has one-tap access to the dashboard: `node scripts/telegram-notify.js --menu-button "<chatId>" "<tunnel-url>"`. This replaces the default "/" commands button with a "Dashboard" button next to the text input. Update it whenever the tunnel URL changes.
+
+**Dashboard menu button:** Set the bot's persistent menu button so the user always has one-tap access to the dashboard: `node scripts/telegram-notify.js --menu-button "<chatId>" "<dashboard-url>"`. This replaces the default "/" commands button with a "Dashboard" button next to the text input. The tunnel URL is stable, so this is set once and never needs updating.
 
 ## Dashboard Presentation (Telegram)
 
@@ -95,7 +108,7 @@ node scripts/telegram-notify.js --dashboard "<chatId>" "<text>" "<tunnel-url>"
 
 - `chatId` — from the inbound Telegram message's `chat_id`
 - `text` — message shown above the button (e.g., "Your brief is ready.")
-- `tunnel-url` — the active cloudflared tunnel URL (e.g., `https://xxx.trycloudflare.com`)
+- `tunnel-url` — the dashboard's stable public URL (`<dashboard-url>`)
 
 **When to send an inline dashboard button:**
 - After `/morning-brief` — the Brief tab has the new data
@@ -112,7 +125,7 @@ When the user messages via Telegram (via Claude Code channels), follow these rul
 
 **During syncs:** Use the `/sync` skill. It handles background execution, MFA polling, code routing, and progress reporting. See `.claude/skills/sync/SKILL.md` for the full orchestration.
 
-**Skills the agent supports (11 total):**
+**Skills the agent supports (12 total):**
 
 | Category | Skill | Trigger |
 |----------|-------|---------|
@@ -124,74 +137,43 @@ When the user messages via Telegram (via Claude Code channels), follow these rul
 | Awareness | `/spending-alerts` | "alert me on transactions over $500" |
 | Awareness | `/payment-reminders` | "what payments are due?" |
 | Query | `/brief-me` | "how much on restaurants?", "spending report", "how's my portfolio?", "show holdings" |
+| Planning (optional add-on) | `/financial-statement` | "personal financial statement", "PFS", "family balance sheet", "planning review" |
 | Management | `/category-override` | "classify X as Shopping" |
 | Dashboard | `/custom-view` | "show me...", "add a tab for...", "build me a view of..." |
 | Maintenance | `/reflect` | "reflect", "update wiki", "daily maintenance" |
 
 ## Agent Memory (Wiki)
 
-The agent has a persistent memory system via interlinked markdown files at `data/wiki/`. Zero external dependencies — just files. Fully visible in any editor. See `data/wiki/schema.md` for full conventions.
+The agent has a persistent memory system via interlinked markdown files at `data/wiki/`. Zero external dependencies — just files. Fully visible in any editor. It answers one question: **what do we currently believe, and on what evidence?** Rules (kinds, page header, statuses, page shape): `docs/wiki.md` — read it before writing a page.
+
+Pages are organised by **kind of claim**: `goals/` (with a live headline number), `decisions/` (calls made and rules followed), `findings/` (what we learned about the money or the data: standing / refuted / superseded), `context/` (household facts), `reflections/` (one per month), `sources/` (ingested articles). The title is the claim; the first paragraph is the answer with its key number; every number has a source.
 
 **Two operating modes:**
 
-**Active capture (during conversations):** When financial intent is detected mid-conversation, spawn a background subagent to create or update a wiki page. The main conversation continues unblocked. Bias towards creating new pages — better to capture something twice than miss it once. Always update `data/wiki/index.md` and append to `data/wiki/log.md`.
+**Active capture (during conversations):** When financial intent is detected mid-conversation, spawn a background subagent to create or update a wiki page. The main conversation continues unblocked. Capture it twice rather than miss it once. Edit in place: never overwrite a page you haven't read. After any add, rename or status change, run `node scripts/wiki.js index` (never hand-edit `index.md`) and append to `data/wiki/log.md`.
 
 | Signal | Action |
 |--------|--------|
-| "I'm saving for a house" | Create/update `data/wiki/goals/house-down-payment.md` |
-| "I want to spend less on restaurants" | Create/update `data/wiki/preferences/reduce-restaurant-spending.md` |
-| "My credit card balance is getting high" | Create/update `data/wiki/concerns/credit-card-balance.md` |
-| "Starting new job in May" | Create/update `data/wiki/context/new-job-may-2026.md` |
-| "I get paid biweekly on Fridays" | Create/update `data/wiki/context/pay-schedule.md` |
+| "I'm saving for a house" | Create/update a goal: `data/wiki/goals/house-down-payment.md` |
+| "Let's keep restaurants under $500" / "Count the whole mortgage as cash out" | Create/update a decision: `data/wiki/decisions/<rule>.md` |
+| A spending anomaly, a data defect, a test result | Create/update a finding: `data/wiki/findings/<claim>.md` |
+| "My credit card balance is getting high" | A finding (or a goal if they set a target), with an `## Open` item |
+| "Starting new job in May" / "I get paid biweekly on Fridays" | Create/update context: `data/wiki/context/<fact>.md` |
+| A link worth keeping | A source: `data/wiki/sources/<slug>.md` (use `scripts/wiki-ingest.js` to fetch it) |
 
-**Active recall (during conversations):** When context is needed to answer a question or compose a response, read `data/wiki/index.md` to find relevant pages, then read those pages directly. No subagent needed — just file reads.
+**Active recall (during conversations):** Read `data/wiki/index.md` to find relevant pages, then read those pages directly. Before quoting a number or re-arguing a decision, read the page. Never quote a refuted or superseded page as current.
 
 **Do NOT store in wiki:**
 - Category corrections ("Zelle to landlord is rent") — use `/category-override` and `config/category-overrides.json`
 - Temporary debugging context
 - Data already in foliome.db or config/
 
-**Periodic maintenance:** The `/reflect` skill scans all wiki pages, consolidates duplicates, updates goals with real data from foliome.db, discovers patterns, and writes monthly reflections. Run it periodically or after `/morning-brief`.
-
-### Content Ingestion
-
-When the user shares a URL with intent to save ("save this", "remember this", "bookmark this", "interesting article"), ingest the content into the wiki:
-
-1. **Detect content type** from the URL:
-   - `x.com/*/status/*` or `twitter.com/*/status/*` → tweet
-   - `youtube.com/watch?v=*` or `youtu.be/*` → video
-   - URL ending in `.pdf` → PDF
-   - Everything else → article
-
-2. **Fetch content:**
-   - **Tweet:** `node scripts/wiki-ingest.js tweet <url>` — returns JSON with text, author, media
-   - **YouTube:** `node scripts/wiki-ingest.js youtube <url>` — returns JSON with title, transcript, metadata
-   - **Article:** Use WebFetch tool directly
-   - **PDF:** Download to `data/wiki/assets/`, use Read tool
-
-3. **Validate URL first:** `node scripts/wiki-ingest.js validate <url>` — blocks non-HTTPS and private IPs.
-
-4. **Process:** The fetched content is wrapped in untrusted boundary markers. Extract key insights, summarize, pick tags.
-
-5. **Write wiki page** to `data/wiki/articles/<slug>.md`:
-   ```yaml
-   ---
-   type: article
-   created: YYYY-MM-DD
-   updated: YYYY-MM-DD
-   status: active
-   tags: [relevant, tags]
-   source_url: https://original-url
-   source_type: tweet | article | video | pdf
-   ---
-   ```
-
-6. **Update** `data/wiki/index.md` and append to `data/wiki/log.md`.
+**Periodic maintenance:** The `/reflect` skill checks data coverage first, refreshes goal numbers (`node scripts/wiki.js goals`), re-checks finding statuses, merges duplicates (re-status, never delete), writes the monthly reflection, and regenerates the index (`node scripts/wiki.js index`, then `check`). Run it nightly or after `/morning-brief`.
 
 ### Daily Brief
 
 The `/morning-brief` skill generates structured JSON at `data/brief/latest.json`, served to the dashboard's Brief tab via `/api/brief`. The brief draws from three sources:
-- **Wiki (`data/wiki/`)** — goals, preferences, concerns (what matters)
+- **Wiki (`data/wiki/`)** — goals, decisions, standing findings (what matters)
 - **foliome.db** — transactions, balances, holdings (what happened)
 - **config/** — budgets.json, payment-schedule.json (what's set)
 
@@ -226,7 +208,7 @@ Config-driven Playwright module (`readers/browser-reader.js`). Each institution 
 - **Subsequent runs:** Incremental — from last known transaction date to today
 - **CSV parsing is schema-agnostic:** Raw bank columns preserved as-is in JSON output. Each bank has different schemas — all captured faithfully.
 - **PDF parsing:** LiteParse extracts layout-aware text (with Tesseract.js OCR fallback for scanned pages) → raw text saved as `pendingExtraction` → agent extracts structured transactions (amounts as-shown, no sign interpretation — `import.js` normalizes).
-- **Dedup (Layer 2):** Natural-key UNIQUE on `(institution, account_id, date, amount, description)` for transactions, plus `symbol` for investment transactions. No synthetic hash column — derived state in the schema is fragile (changing the formula invalidates every historical row). The natural key is stable across re-syncs because date/amount/description are what the bank actually emits per row. On re-sync, the UPSERT refreshes posting_date/status/balance_after/raw; existing values are preserved when the new import omits them. If you have an existing DB with the legacy `dedup_key` column, run `node scripts/migrate-dedup-natural-key.js` once to migrate.
+- **Dedup (Layer 2):** Key = `institution + account_id + raw_transaction_id` when the source provides a stable ID (API connectors), falling back to `institution + account_id + date + amount + description_hash` for CSV sources. ID-based dedup prevents duplicates from pending→posted date shifts. Pending transactions update to posted status via upsert.
 
 ## Data Semantics & Normalization
 
@@ -308,19 +290,14 @@ Task-phase failures (balances, transactions) go through a 4-level recovery syste
 
 - `readers/run.js` — CLI for single-institution sync (`--balances`, `--transactions`, `--explore`)
 - `readers/sync-all.js` — Parallel sync orchestrator (all institutions)
-- `readers/explore-interactive.js` — Interactive browser explorer for discovering bank UI patterns
-- `readers/explore.js` / `readers/explore-cmd.js` — Explorer primitives and CLI entry point
-- `connectors/real-estate.js` — Real estate valuation via Google/Zillow/Redfin scraping
 - `sync-engine/import.js` — JSON → SQLite transform with normalization + dedup
 - `sync-engine/classify.js` — Transaction classifier
 - `scripts/dashboard-server.js` — Telegram Mini App server (auth, API, static serving)
-- `scripts/dashboard-queries.js` — All SQL query functions for dashboard API endpoints
-- `scripts/telegram-notify.js` — Telegram utility (sendMessage, sendPhoto, sendDashboard, setMenuButton, waitForReply)
+- `scripts/telegram-notify.js` — Telegram utility (sendMessage, sendPhoto, sendDashboard, setMenuButton, waitForReply); routes outbound text through MDV2 conversion with plain-text fallback on parse error
+- `scripts/lib/telegram-mdv2.mjs` — shared MarkdownV2 converter (`formatMessageMdV2`, `escapeMdV2`). Single source of truth for MarkdownV2 conversion, used by `telegram-notify.js`
+- `sync-engine/tags.js` — transaction tagging: user-curated labels orthogonal to categories, stored in SQLite (`transaction_tags`, `tag_rules`) and re-materialized after each import
 - `scripts/credentials.js` — Credential resolution (Bitwarden vault → .env fallback)
-- `scripts/vault.js` — Bitwarden vault CLI wrapper (search, map, test, migrate)
-- `scripts/gmail-mfa.js` — Gmail API MFA code retrieval for email-based MFA
-- `scripts/cleanup-downloads.js` — Remove stale download files after import
-- `scripts/wiki-ingest.js` — Content ingestion (tweet/YouTube fetch, URL validation) for wiki articles
+- `scripts/pfs/build.js` — Personal financial statement engine (snapshot + HTML/PDF); `npm run test:pfs` runs the demo-household checks
 - `config/` — All config files (populated from `config-templates/` on setup, gitignored)
 - `data/` — All runtime data (gitignored): `sync-output/`, `foliome.db`, `downloads/`, `wiki/`, `brief/`, `models/`
 - `.claude/skills/` — Agent skills (discoverable via /slash-commands)
