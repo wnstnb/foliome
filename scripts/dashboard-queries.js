@@ -4,6 +4,27 @@ const fs = require('fs');
 
 const DEFAULT_DB = path.join(__dirname, '..', 'data', 'foliome.db');
 
+// Month-end balance per account: each account's latest balance synced on or
+// before the end of each month. An account that wasn't synced during a month
+// (the home value refreshes monthly; a broken login keeps its last figure)
+// carries its last known balance forward instead of dropping out of that
+// month's total, which made the current month read low by the whole house
+// value. Carry-forward stops after 62 days so a closed account fades out.
+const MONTH_END_BALANCES_CTE = `
+  months AS (SELECT DISTINCT strftime('%Y-%m', synced_at) AS month FROM balances),
+  latest AS (
+    SELECT m.month, b.account_id, MAX(b.synced_at) AS ms
+    FROM months m
+    JOIN balances b ON strftime('%Y-%m', b.synced_at) <= m.month
+    GROUP BY m.month, b.account_id
+  ),
+  month_end AS (
+    SELECT l.month, b.account_id, b.balance
+    FROM latest l
+    JOIN balances b ON b.account_id = l.account_id AND b.synced_at = l.ms
+    WHERE julianday(date(l.month || '-01', '+1 month')) - julianday(l.ms) <= 62
+  )`;
+
 function openDb(dbPath) {
   return new Database(dbPath || DEFAULT_DB, { readonly: true });
 }
@@ -36,14 +57,8 @@ function getOverview(dbPath) {
 
   // Net worth trend (monthly, last 12 months)
   const netWorthTrend = db.prepare(`
-    SELECT month, SUM(balance) as net_worth FROM (
-      SELECT strftime('%Y-%m', b.synced_at) as month, b.account_id, b.balance
-      FROM balances b
-      INNER JOIN (
-        SELECT account_id as aid, strftime('%Y-%m', synced_at) as m, MAX(synced_at) as ms
-        FROM balances GROUP BY aid, m
-      ) latest ON b.account_id = latest.aid AND b.synced_at = latest.ms
-    )
+    WITH ${MONTH_END_BALANCES_CTE}
+    SELECT month, SUM(balance) as net_worth FROM month_end
     GROUP BY month ORDER BY month
   `).all();
 
@@ -369,18 +384,12 @@ function getHealth(dbPath) {
   const db = openDb(dbPath);
 
   const months = db.prepare(`
+    WITH ${MONTH_END_BALANCES_CTE}
     SELECT month,
            SUM(CASE WHEN balance > 0 THEN balance ELSE 0 END) as assets,
            SUM(CASE WHEN balance < 0 THEN balance ELSE 0 END) as liabilities,
            SUM(balance) as net_worth
-    FROM (
-      SELECT strftime('%Y-%m', b.synced_at) as month, b.account_id, b.balance
-      FROM balances b
-      INNER JOIN (
-        SELECT account_id as aid, strftime('%Y-%m', synced_at) as m, MAX(synced_at) as ms
-        FROM balances GROUP BY aid, m
-      ) latest ON b.account_id = latest.aid AND b.synced_at = latest.ms
-    )
+    FROM month_end
     GROUP BY month
     ORDER BY month
   `).all();

@@ -50,7 +50,9 @@ export function Overview({ onAccountClick, onKPIClick }: OverviewProps) {
     return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
   });
 
-  // Find stale institutions (>48h) — use most recent balance per institution
+  // Find stale institutions — use most recent balance per institution.
+  // Real estate refreshes monthly (25-day sync threshold), so it only counts
+  // as stale past 26 days; everything else past 48 hours.
   const institutionFreshest = new Map<string, number>();
   for (const b of data.balances) {
     const age = staleness(b.synced_at);
@@ -59,7 +61,8 @@ export function Overview({ onAccountClick, onKPIClick }: OverviewProps) {
   }
   const staleInstitutions = new Map<string, number>();
   for (const [inst, hours] of institutionFreshest) {
-    if (hours > 48) staleInstitutions.set(inst, hours);
+    const limit = inst === 'real-estate' ? 26 * 24 : 48;
+    if (hours > limit) staleInstitutions.set(inst, hours);
   }
 
   return (
@@ -114,7 +117,7 @@ export function Overview({ onAccountClick, onKPIClick }: OverviewProps) {
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-[var(--warning)]" />
             <span className="t-caption">
-              {data.alerts[0].account_name} due {(data.alerts[0].days_until ?? 0) <= 1 ? 'today' : `in ${data.alerts[0].days_until}d`}
+              {data.alerts[0].account_name} due {(data.alerts[0].days_until ?? 0) <= 0 ? 'today' : data.alerts[0].days_until === 1 ? 'tomorrow' : `in ${data.alerts[0].days_until}d`}
             </span>
           </div>
           <span className="t-value text-[var(--warning)]">{fmtShort(Math.abs(data.alerts[0].balance))}</span>

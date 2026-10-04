@@ -170,7 +170,7 @@ function UpcomingSection({ section }: { section: BriefSection }) {
           {section.payments.map((p, i) => (
             <div key={i} className="flex items-center justify-between">
               <span className="t-caption text-[var(--text-muted)]">
-                {p.account_name} {p.days_until != null && `— ${p.days_until <= 1 ? 'due today' : `in ${p.days_until}d`}`}
+                {p.account_name} {p.days_until != null && `— ${p.days_until <= 0 ? 'due today' : p.days_until === 1 ? 'due tomorrow' : `in ${p.days_until}d`}`}
               </span>
               <span className="t-value text-[var(--warning)]">{fmtShort(Math.abs(p.balance))}</span>
             </div>
