@@ -125,7 +125,7 @@ When the user messages via Telegram (via Claude Code channels), follow these rul
 
 **During syncs:** Use the `/sync` skill. It handles background execution, MFA polling, code routing, and progress reporting. See `.claude/skills/sync/SKILL.md` for the full orchestration.
 
-**Skills the agent supports (12 total):**
+**Skills the agent supports (13 total):**
 
 | Category | Skill | Trigger |
 |----------|-------|---------|
@@ -137,6 +137,7 @@ When the user messages via Telegram (via Claude Code channels), follow these rul
 | Awareness | `/spending-alerts` | "alert me on transactions over $500" |
 | Awareness | `/payment-reminders` | "what payments are due?" |
 | Query | `/brief-me` | "how much on restaurants?", "spending report", "how's my portfolio?", "show holdings" |
+| Statements | `/statement` | "statement for September", "monthly statement", "what happened last month", "Q3 statement" |
 | Planning (optional add-on) | `/financial-statement` | "personal financial statement", "PFS", "family balance sheet", "planning review" |
 | Management | `/category-override` | "classify X as Shopping" |
 | Dashboard | `/custom-view` | "show me...", "add a tab for...", "build me a view of..." |
@@ -297,6 +298,7 @@ Task-phase failures (balances, transactions) go through a 4-level recovery syste
 - `scripts/lib/telegram-mdv2.mjs` — shared MarkdownV2 converter (`formatMessageMdV2`, `escapeMdV2`). Single source of truth for MarkdownV2 conversion, used by `telegram-notify.js`
 - `sync-engine/tags.js` — transaction tagging: user-curated labels orthogonal to categories, stored in SQLite (`transaction_tags`, `tag_rules`) and re-materialized after each import
 - `scripts/credentials.js` — Credential resolution (Bitwarden vault → .env fallback)
+- `scripts/statements/build.js` — Statement of activity engine (any period; `--kind issued` for the frozen monthly); `npm run test:statements` runs the demo-household checks
 - `scripts/pfs/build.js` — Personal financial statement engine (snapshot + HTML/PDF); `npm run test:pfs` runs the demo-household checks
 - `config/` — All config files (populated from `config-templates/` on setup, gitignored)
 - `data/` — All runtime data (gitignored): `sync-output/`, `foliome.db`, `downloads/`, `wiki/`, `brief/`, `models/`

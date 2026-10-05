@@ -19,6 +19,7 @@
  */
 
 require('@dotenvx/dotenvx').config({ path: require('path').join(__dirname, '..', '.env') });
+const statementsLib = require('./statements/library');
 const http = require('http');
 const crypto = require('crypto');
 const path = require('path');
@@ -396,7 +397,7 @@ const CSP_HEADER = [
   "script-src 'self' https://telegram.org",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' https://cdn.simpleicons.org",
-  "frame-src https://www.youtube.com https://www.youtube-nocookie.com",
+  "frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com",
   "connect-src 'self'",
   "object-src 'none'",
 ].join('; ');
@@ -480,6 +481,21 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // ─── Statement files (a signed, 5-minute link is the auth) ───────────────────
+  // Telegram's in-app downloader and the viewer's frame can't send the session header,
+  // so /api/statements/link (authenticated) hands out a short-lived signed link instead.
+  if (parsed.pathname.startsWith('/statement-file/') && req.method === 'GET') {
+    const hit = statementsLib.resolveLink(parsed.pathname.slice('/statement-file/'.length));
+    console.log(`[dashboard] statement file ${hit ? `served ${hit.file}` : 'refused'} (${(req.headers['user-agent'] || '').slice(0, 60)})`);
+    if (!hit) { res.writeHead(404, { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' }); res.end('Link expired or not found'); return; }
+    const headers = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer' };
+    if (hit.file === 'pdf') Object.assign(headers, { 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="${hit.name}"` });
+    else Object.assign(headers, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': statementsLib.STATEMENT_CSP });
+    res.writeHead(200, headers);
+    fs.createReadStream(hit.abs).pipe(res);
+    return;
+  }
+
   // ─── API Routes (protected by session token) ───────────────────────────────
   if (parsed.pathname.startsWith('/api/') && req.method === 'GET') {
     const user = requireAuth(req);
@@ -551,6 +567,31 @@ const server = http.createServer((req, res) => {
           console.error('[dashboard] Brief read error:', e.message);
           sendJson({ exists: false });
         }
+        return;
+      }
+      // ─── Statements API ────────────────────────────────────────────────
+      if (parsed.pathname === '/api/statements') {
+        sendJson(statementsLib.listStatements());
+        return;
+      }
+      if (parsed.pathname === '/api/statements/link') {
+        const link = statementsLib.signLink(parsed.searchParams.get('id') || '', parsed.searchParams.get('file') || '');
+        console.log(`[dashboard] statement link ${parsed.searchParams.get('file')} ${link ? 'issued' : 'refused'} for ${parsed.searchParams.get('id')}`);
+        if (!link) { res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Not found' })); return; }
+        sendJson({ url: `statement-file/${link.token}`, name: link.name, expiresInSeconds: link.expiresInSeconds });
+        return;
+      }
+      if (parsed.pathname === '/api/statements/send') {
+        // The bot sends the PDF to the person viewing (a Telegram user), as a chat attachment
+        const hit = statementsLib.resolveLink((statementsLib.signLink(parsed.searchParams.get('id') || '', 'pdf') || {}).token);
+        const chatId = user.portal ? ALLOWED_CHAT_ID : String(user.userId || ALLOWED_CHAT_ID);
+        if (!hit || !chatId) { res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Not found' })); return; }
+        const form = new FormData();
+        form.append('chat_id', chatId);
+        form.append('document', new Blob([fs.readFileSync(hit.abs)], { type: 'application/pdf' }), hit.name);
+        fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendDocument`, { method: 'POST', body: form })
+          .then(r => r.json()).then(j => sendJson({ sent: !!j.ok }))
+          .catch(e => { console.error('[dashboard] sendDocument failed:', e.message); sendJson({ sent: false }); });
         return;
       }
       // ─── Wiki API ──────────────────────────────────────────────────────

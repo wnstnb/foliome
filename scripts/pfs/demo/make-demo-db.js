@@ -3,7 +3,11 @@
  * Build a synthetic Foliome database for the demo household (scripts/pfs/demo/demo-profile.json).
  * Same schema as data/foliome.db, made-up data only.
  *
- * Usage: node scripts/pfs/demo/make-demo-db.js <out.db> [--as-of YYYY-MM-DD]
+ * Usage: node scripts/pfs/demo/make-demo-db.js <out.db> [--as-of YYYY-MM-DD] [--quarter-later] [--history]
+ *
+ * --history adds what a statement of activity needs and the PFS doesn't: daily balance snapshots that tie out to
+ * the transactions, a monthly transfer to savings, card payments on both sides, 401(k) contributions from pay and a
+ * mortgage that amortizes. The PFS tests build without it, so their numbers don't move.
  */
 const fs = require('fs');
 const Database = require('better-sqlite3');
@@ -26,6 +30,7 @@ CREATE TABLE sync_status (institution TEXT PRIMARY KEY, last_success TEXT, last_
 const ts = `${asOf}T14:00:00.000Z`;
 // --quarter-later: the same household one quarter on (markets up a bit, mortgage paid down, 529 deposits made)
 const later = process.argv.includes('--quarter-later');
+const history = process.argv.includes('--history');
 
 const accounts = [
   ['demobank', 'demobank-checking-1001', 'checking', 4200],
@@ -59,6 +64,7 @@ const it = db.prepare('INSERT INTO transactions (institution, account_id, date, 
 const end = new Date(`${asOf.slice(0, 7)}-01T00:00:00Z`);
 let seed = 11; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
 const jitter = (x, p = 0.08) => +(x * (1 + (rnd() * 2 - 1) * p)).toFixed(2);
+let prevCharges = null; const months = [];
 for (let m = 6; m >= 1; m--) {
   const d = new Date(end); d.setUTCMonth(d.getUTCMonth() - m);
   const ym = d.toISOString().slice(0, 7);
@@ -79,8 +85,88 @@ for (let m = 6; m >= 1; m--) {
   it.run('demobank', card, day(7), 'STREAMING + APPS', -95, 'Subscription');
   it.run('demobank', card, day(20), 'ONLINE STORE', -jitter(560, 0.3), 'Shopping');
   it.run('demobank', card, day(22), 'GAS STATION', -jitter(180), 'Transportation');
-  it.run('demobank', chk, day(25), 'CARD AUTOPAY', -2100, 'Transfer');
+  if (history) {
+    // Autopay pays last month's card charges in full, on both sides; savings gets a monthly transfer.
+    const pay = +(prevCharges ?? 2100).toFixed(2);
+    it.run('demobank', chk, day(25), 'CARD AUTOPAY', -pay, 'Transfer');
+    it.run('demobank', card, day(25), 'PAYMENT, THANK YOU', pay, 'Transfer');
+    it.run('demobank', chk, day(29), 'TRANSFER TO SAVINGS ...1002', -4000, 'Transfer');
+    it.run('demobank', 'demobank-savings-1002', day(29), 'TRANSFER FROM CHECKING ...1001', 4000, 'Transfer');
+    prevCharges = -db.prepare(`SELECT SUM(amount) s FROM transactions WHERE account_id = ? AND date LIKE ? AND category != 'Transfer'`).get(card, `${ym}-%`).s;
+    months.push(ym);
+  } else it.run('demobank', chk, day(25), 'CARD AUTOPAY', -2100, 'Transfer');
   if (later && m <= 3) it.run('demo529', 'demo529-education-4001', day(10), 'CONTRIBUTION FROM CHECKING', 640, 'Transfer');
 }
+if (history) writeHistory();
 db.close();
-console.log(`Demo database written: ${out} (as of ${asOf})`);
+console.log(`Demo database written: ${out} (as of ${asOf}${history ? ', with history' : ''})`);
+
+// Daily end-of-day balance snapshots for every account, worked backwards from the as-of balances so that
+// opening + transactions = closing for cash and cards, and investments, the mortgage and the home move by rule.
+function writeHistory() {
+  db.exec(`CREATE TABLE IF NOT EXISTS investment_transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, institution TEXT NOT NULL,
+    account_id TEXT NOT NULL, date TEXT NOT NULL, description TEXT NOT NULL, type TEXT, symbol TEXT, quantity REAL, price REAL,
+    amount REAL NOT NULL, fees REAL DEFAULT 0, user_category TEXT, category_source TEXT)`);
+  const iit = db.prepare('INSERT INTO investment_transactions (institution, account_id, date, description, type, amount, user_category, category_source) VALUES (?,?,?,?,?,?,?,?)');
+  // Card statements close at month end; autopay pays each one in full on the 25th of the next month.
+  db.exec(`CREATE TABLE IF NOT EXISTS statement_balances (id INTEGER PRIMARY KEY AUTOINCREMENT, institution TEXT NOT NULL, account_id TEXT NOT NULL,
+    period_start TEXT, period_end TEXT NOT NULL, opening_balance REAL, closing_balance REAL NOT NULL, source TEXT, UNIQUE(institution, account_id, period_end))`);
+  for (const ym of months) {
+    const charges = db.prepare("SELECT COALESCE(SUM(amount), 0) s FROM transactions WHERE account_id = 'demobank-credit-6001' AND date LIKE ? AND category != 'Transfer'").get(`${ym}-%`).s;
+    const last = new Date(Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7), 0)).toISOString().slice(0, 10);
+    db.prepare('INSERT INTO statement_balances (institution, account_id, period_start, period_end, closing_balance, source) VALUES (?,?,?,?,?,?)').run('demobank', 'demobank-credit-6001', `${ym}-01`, last, +charges.toFixed(2), 'pdf');
+  }
+  const k401 = 'demoplan-401k-3001';
+  for (const ym of months) for (const d of ['15', '28']) iit.run('demoplan', k401, `${ym}-${d}`, 'Payroll contribution (employee + match)', 'Contribution', 946.5, 'Contribution', 'rule');
+
+  const close = Object.fromEntries(accounts.map(([, id, , bal]) => [id, bal]));
+  const days = []; // every day from the first month through the day before as-of
+  for (let d = new Date(`${months[0]}-01T00:00:00Z`); d < new Date(`${asOf}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + 1)) days.push(d.toISOString().slice(0, 10));
+  const eod = day => new Date(`${day}T23:59:00`).toISOString(); // end of day, local time
+  const after = (acct, day) => db.prepare('SELECT COALESCE(SUM(amount), 0) s FROM transactions WHERE account_id = ? AND date > ?').get(acct, day).s;
+  const contribAfter = (acct, day) => db.prepare('SELECT COALESCE(SUM(amount), 0) s FROM investment_transactions WHERE account_id = ? AND date > ?').get(acct, day).s;
+  const kinds = Object.fromEntries(accounts.map(([inst, id, type]) => [id, { inst, type }]));
+  const names = { 'demobank-checking-1001': 'Demo Bank Checking (...1001)', 'demobank-savings-1002': 'Demo Bank Savings (...1002)',
+    'demobank-credit-6001': 'Demo Bank Visa (...6001)', 'demobroker-brokerage-2001': 'Brokerage (...2001)', 'demobroker-ira-2002': 'Rollover IRA (...2002)',
+    'demobroker-roth-2003': 'Roth IRA (...2003)', 'demoplan-401k-3001': '401(k) (...3001)', 'demo529-education-4001': '529 Plan (...4001)',
+    'home-residence': 'Home (estimate)', 'demolender-mortgage-5001': 'Mortgage (...5001)' };
+  for (const [id, n] of Object.entries(names)) db.prepare('UPDATE balances SET account_name = ? WHERE account_id = ?').run(n, id);
+  const put = (id, day, bal) => db.prepare('INSERT INTO balances (institution, account_id, account_name, account_type, balance, synced_at) VALUES (?,?,?,?,?,?)').run(kinds[id].inst, id, names[id], kinds[id].type, +bal.toFixed(2), eod(day));
+
+  // Cash and cards: balance at end of day = as-of balance minus everything posted after it.
+  for (const id of ['demobank-checking-1001', 'demobank-savings-1002', 'demobank-credit-6001'])
+    for (const day of days) put(id, day, close[id] - after(id, day));
+
+  // Investments: a fixed monthly return path, applied backwards; contributions added on their dates.
+  const ret = [0.008, -0.012, 0.015, 0.004, 0.010, 0.00966];
+  const invest = ['demobroker-brokerage-2001', 'demobroker-ira-2002', 'demobroker-roth-2003', k401, 'demo529-education-4001'];
+  for (const id of invest) {
+    const monthEnd = {}; let v = close[id];
+    for (let i = months.length - 1; i >= 0; i--) {
+      monthEnd[months[i]] = v;
+      const c = db.prepare('SELECT COALESCE(SUM(amount), 0) s FROM investment_transactions WHERE account_id = ? AND date LIKE ?').get(id, `${months[i]}-%`).s;
+      v = (v - c) / (1 + ret.at(i));
+    }
+    const startOf = Object.fromEntries(months.map((ym, i) => [ym, i ? monthEnd[months[i - 1]] : v]));
+    for (const day of days) {
+      const ym = day.slice(0, 7);
+      if (!monthEnd[ym]) { put(id, day, close[id]); continue; }
+      const dim = new Date(Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7), 0)).getUTCDate(), f = +day.slice(8) / dim;
+      const cIn = db.prepare('SELECT COALESCE(SUM(amount), 0) s FROM investment_transactions WHERE account_id = ? AND date LIKE ? AND date <= ?').get(id, `${ym}-%`, day).s;
+      const cAll = db.prepare('SELECT COALESCE(SUM(amount), 0) s FROM investment_transactions WHERE account_id = ? AND date LIKE ?').get(id, `${ym}-%`).s;
+      const growth = monthEnd[ym] - startOf[ym] - cAll;
+      put(id, day, startOf[ym] + growth * f + cIn);
+    }
+  }
+
+  // Mortgage: 5.4% fixed, $2,650 paid on the 1st; owed before each payment worked back from the as-of balance.
+  const mort = 'demolender-mortgage-5001', i = 0.054 / 12;
+  const owedAfter = {}; let owed = -close[mort];
+  for (let k = months.length - 1; k >= 0; k--) { owedAfter[months[k]] = owed; owed = (owed + 2650) / (1 + i); }
+  for (const day of days) {
+    const ym = day.slice(0, 7);
+    put(mort, day, -(owedAfter[ym] ?? -close[mort]));
+  }
+  // Home: an online estimate refreshed on the 20th, up $2,000 a month.
+  months.forEach((ym, k) => put('home-residence', `${ym}-20`, close['home-residence'] - 2000 * (months.length - 1 - k)));
+}

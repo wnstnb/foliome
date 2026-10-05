@@ -10,7 +10,8 @@
     "dashboard:build": "cd dashboard && npm run build",
     "dashboard:serve": "node scripts/dashboard-server.js",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "test:pfs": "node scripts/pfs/demo/test.js"
+    "test:pfs": "node scripts/pfs/demo/test.js",
+    "test:statements": "node scripts/statements/test.js"
   },
   "keywords": [],
   "author": "",

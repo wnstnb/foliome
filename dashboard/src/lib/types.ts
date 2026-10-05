@@ -278,3 +278,22 @@ export interface WikiPageData {
   related: WikiRelated[];
   supersededBy: { path: string; title: string } | null;
 }
+
+// ─── Statements ───────────────────────────────────────────────────────────────
+export interface StatementRevision { rev: number; id: string }
+export interface PeriodicStatement {
+  id: string; type: 'periodic'; kind: 'issued' | 'custom'; period: string; rev: number; revisions: StatementRevision[];
+  label: string; from: string; to: string; issuedAt: string;
+  netWorth: number; netWorthChange: number; left: number; typicalLeft: number | null; flags: number; hasPdf: boolean;
+}
+export interface FinancialStatement {
+  id: string; type: 'financial'; date: string; rev: number; revisions: StatementRevision[]; label: string;
+  scenario: string | null; asOf: string; netWorth: number | null; surplus: number | null;
+  goalsOnPace: number; goals: number; topDecision: string | null; hasPdf: boolean;
+}
+export interface StatementsData {
+  periodic: { issued: PeriodicStatement[]; custom: PeriodicStatement[] };
+  financial: { statements: FinancialStatement[]; scenarios: FinancialStatement[] };
+  across: { period: string; label: string; netWorth: number; left: number }[];
+  schedule: { periodic: { day: number; months: number[] | null } | null; financial: { day: number; months: number[] | null } | null };
+}

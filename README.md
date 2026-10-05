@@ -110,7 +110,7 @@ Requires Bun and the Claude Code Telegram plugin. See [docs/telegram-setup.md](d
 claude --channels plugin:telegram@claude-plugins-official --dangerously-skip-permissions
 ```
 
-A Telegram Mini App dashboard is also available — a responsive React SPA with tabs for net worth overview, transaction analysis, budgets, portfolio holdings, subscriptions, and an agent knowledge base wiki. The Brief tab is the landing page — a personalized daily financial narrative powered by agent memory and live data. Responsive layout adapts from mobile (Telegram WebView) to full-page (desktop browser). The server validates requests via Telegram's HMAC-SHA256 initData, issues session tokens for API calls, and auto-detects the correct bot token. It can also run behind an authenticating reverse proxy (portal mode), which then handles auth instead of Telegram. See [docs/telegram-setup.md](docs/telegram-setup.md#dashboard-mini-app-optional) for setup.
+A Telegram Mini App dashboard is also available — a responsive React SPA with tabs for net worth overview, statements (monthly and financial, viewable and downloadable as issued), transaction analysis, budgets, portfolio holdings, subscriptions, and an agent knowledge base wiki. The Brief tab is the landing page — a personalized daily financial narrative powered by agent memory and live data. Responsive layout adapts from mobile (Telegram WebView) to full-page (desktop browser). The server validates requests via Telegram's HMAC-SHA256 initData, issues session tokens for API calls, and auto-detects the correct bot token. It can also run behind an authenticating reverse proxy (portal mode), which then handles auth instead of Telegram. See [docs/telegram-setup.md](docs/telegram-setup.md#dashboard-mini-app-optional) for setup.
 
 ## What your agent can do with your data
 
@@ -120,6 +120,7 @@ Once the data layer is synced, a library of skills in `.claude/skills/` provides
 - **Scheduling** — `/foliome-loop` manages recurring tasks (e.g., daily non-MFA sync, weekly morning brief) with cron scheduling, failure tracking, and auto-suspend.
 - **Awareness** — `/morning-brief` generates a daily financial summary. `/spending-alerts` monitors for large charges and low balances. `/payment-reminders` tracks credit card due dates.
 - **Query** — `/brief-me` answers on-demand questions about spending, portfolio, and trends with optional CSV export.
+- **Statements** — a monthly statement of activity, like a bank statement for the whole household: a net-worth bridge that ties to the dollar, spending by category against a typical month and your budgets, recurring charges, cards, every account's opening and closing balance, and every posted transaction by account. Issued statements are frozen; later corrections show up in the next one. Any period can be generated on demand with `/statement` ("statement for Q3"); issue a month on request, or schedule it monthly with `/foliome-loop`. See the [sample](docs/statements-sample.pdf).
 - **Planning (optional)** — `/financial-statement` builds a printable personal financial statement: what you own and owe, monthly cash flow, goals with the monthly action each needs, today's path vs. the plan, and retirement odds. It interviews only for what the data can't show, and reviews progress quarterly. It's an add-on: nothing else in Foliome depends on it, and its one extra dependency (`xlsx`) is optional.
 - **Dashboard** — `/custom-view` builds new dashboard tabs from natural language requests.
 - **Management** — `/category-override` reclassifies transactions via natural language. `/reflect` maintains the agent's knowledge wiki.
@@ -190,7 +191,7 @@ sync-engine/                    Layer 2 persistence
   parse-symbol.js               Options contract and investment symbol parser
   security-gate.js              Domain + HTTPS verification
 dashboard/                      React SPA (Vite + TypeScript + Tailwind + shadcn)
-  src/tabs/                     Brief, Overview, Transactions, Budget, Portfolio, Subscriptions, Wiki
+  src/tabs/                     Brief, Overview, Statements, Transactions, Budget, Portfolio, Subscriptions, Wiki
   src/components/               Shared components + Financial Health overlay
   dist/                         Build output (gitignored), served by dashboard-server
 scripts/
@@ -206,6 +207,7 @@ scripts/
   household-picture.js          Whole-household totals and flows shared by the brief and planning views
   migrate-dedup-natural-key.js  One-time migration to natural-key transaction dedup
   pfs/                          Personal financial statement: engine, renderer, tax and market data, demo household + tests
+  statements/                   Statement of activity: engine, renderer, tests against the demo household
 config/                         Configuration
   institutions-status.md        Per-institution status, MFA details, download patterns
   budgets.json                  Monthly budget limits per category (for Budget tab)

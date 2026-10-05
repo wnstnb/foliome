@@ -1,6 +1,6 @@
 ---
 name: foliome-loop
-description: Manage recurring scheduled tasks — add, list, pause, resume, remove
+description: Manage recurring scheduled tasks — add, list, change, pause, resume, remove
 trigger: manual
 ---
 
@@ -67,6 +67,17 @@ sunday-full-sync     Sundays 10am       /sync (all)          ⏸ suspended — M
 monthly-reflect      1st of month 9am   /reflect             ✓ active — never run
 ```
 
+### Change `<id>`
+
+Trigger: "move my statement to the 3rd", "change the brief to 7:30", "reschedule", "run it on Mondays instead"
+
+1. Find the entry by ID (or by command if the user names the task, e.g. "my statement" → `/statement`)
+2. Parse the new time or day into a cron expression (see Cron Parsing below)
+3. If it has a `cronJobId`, call CronDelete to unregister the old one
+4. Set the new `cron` and update `description`; keep `id`, `prompt`, `createdAt`, `lastRun`, `lastStatus` and the failure counters
+5. If `enabled`, re-register via CronCreate and update `cronJobId`
+6. Write back to config and confirm with the next run time
+
 ### Remove `<id>`
 
 Trigger: "remove schedule", "delete schedule", "cancel schedule"
@@ -110,8 +121,11 @@ The agent parses natural language into standard 5-field cron expressions. Follow
 | "weekdays 7am" | `0 7 * * 1-5` | Exact time |
 | "every 6 hours" | `7 */6 * * *` | Offset minute |
 | "first of every month" | `3 9 1 * *` | Default 9am, offset |
+| "on the 5th of every month" | `7 9 5 * *` | Monthly days are 1–28 (see below) |
 | "every 30 minutes" | `*/30 * * * *` | Interval — no offset needed |
 | "twice a day" | Two entries: `3 9 * * *` and `3 17 * * *` | Create two schedule entries |
+
+**Monthly schedules run on days 1–28.** Cron skips months that don't have the day: a job on the 31st doesn't run in seven months of the year, and one on the 30th skips February. So a monthly day must be 1–28, the same limit most billing and autopay settings use. If the user asks for the 29th–31st or "the end of the month", say why and offer the 28th or the 1st of the next month.
 
 ## Event-Relative Scheduling
 

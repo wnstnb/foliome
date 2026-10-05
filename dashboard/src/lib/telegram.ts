@@ -12,6 +12,10 @@ declare global {
         ready: () => void;
         expand: () => void;
         close: () => void;
+        openLink?: (url: string) => void;
+        version?: string;
+        isVersionAtLeast?: (v: string) => boolean;
+        downloadFile?: (params: { url: string; file_name: string }, cb?: (accepted: boolean) => void) => void;
         colorScheme: 'light' | 'dark';
         themeParams: Record<string, string>;
         BackButton: {

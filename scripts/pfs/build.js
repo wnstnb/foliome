@@ -907,6 +907,14 @@ const html = render(snapshot, { previous: scenario ? null : previous, base: base
 
 const outDir = scenario ? path.join(OUT_ROOT, asOf, 'scenarios', scenario.name) : path.join(OUT_ROOT, asOf);
 fs.mkdirSync(outDir, { recursive: true });
+// A statement is never overwritten: a same-day rebuild keeps the earlier one as revisions/rev-N.
+if (!scenario && fs.existsSync(path.join(outDir, 'snapshot.json'))) {
+  const revRoot = path.join(outDir, 'revisions');
+  const n = (fs.existsSync(revRoot) ? fs.readdirSync(revRoot).filter(d => /^rev-\d+$/.test(d)).length : 0) + 1;
+  const keep = path.join(revRoot, `rev-${n}`);
+  fs.mkdirSync(keep, { recursive: true });
+  for (const f of ['snapshot.json', 'statement.html', 'statement.pdf']) if (fs.existsSync(path.join(outDir, f))) fs.renameSync(path.join(outDir, f), path.join(keep, f));
+}
 fs.writeFileSync(path.join(outDir, 'snapshot.json'), JSON.stringify(snapshot, null, 2));
 fs.writeFileSync(path.join(outDir, 'statement.html'), html);
 let pdfPath = null;

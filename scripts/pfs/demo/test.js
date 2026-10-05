@@ -74,6 +74,14 @@ check('review: unverifiable actions say so', snap2.review && snap2.review.adhere
 check('review: self-reported amount counts and is marked', snap2.review && snap2.review.adherence.some(a => a.id === 'car' && a.reported && a.actual === 2400), JSON.stringify((snap2.review.adherence.find(a => a.id === 'car') || {})));
 check('review shows on page 1', /Since the last statement/.test(html2) && /Activity vs. plan/.test(html2));
 
+// ── A same-day rebuild never overwrites: the first one is kept as a revision ──
+{
+  const first = fs.readFileSync(path.join(dir, asOf2, 'snapshot.json'));
+  run('build.js', ['--db', db2, '--profile', profile, '--out', dir, '--date', asOf2, '--no-pdf']);
+  const kept = path.join(dir, asOf2, 'revisions', 'rev-1', 'snapshot.json');
+  check('a same-day rebuild keeps the earlier statement as revision 1', fs.existsSync(kept) && Buffer.compare(first, fs.readFileSync(kept)) === 0);
+}
+
 // ── The core never depends on the statement: wiki and goals work with no statement data at all ──
 {
   const emptyPfs = fs.mkdtempSync(path.join(os.tmpdir(), 'pfs-none-'));

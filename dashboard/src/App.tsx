@@ -7,6 +7,7 @@ import { Transactions } from '@/tabs/Transactions';
 import { Budget } from '@/tabs/Budget';
 import { Portfolio } from '@/tabs/Portfolio';
 import { Subscriptions } from '@/tabs/Subscriptions';
+import { Statements } from '@/tabs/Statements';
 import { Wiki } from '@/tabs/Wiki';
 import { FinancialHealth } from '@/components/overlays/FinancialHealth';
 import { fetchWithAuth } from '@/lib/api';
@@ -19,6 +20,7 @@ type HealthMetric = 'net_worth' | 'assets' | 'liabilities' | 'savings';
 const TABS: { id: string; label: string }[] = [
   { id: 'brief', label: 'Brief' },
   { id: 'overview', label: 'Overview' },
+  { id: 'statements', label: 'Statements' },
   { id: 'transactions', label: 'Transactions' },
   { id: 'budget', label: 'Budget' },
   { id: 'portfolio', label: 'Portfolio' },
@@ -166,6 +168,7 @@ function DashboardApp() {
           initialSubTab={txnSubTab}
         />
       )}
+      {activeTab === 'statements' && <Statements />}
       {activeTab === 'budget' && <Budget />}
       {activeTab === 'portfolio' && <Portfolio />}
       {activeTab === 'subs' && <Subscriptions />}
