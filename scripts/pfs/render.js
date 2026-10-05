@@ -182,7 +182,7 @@ function render(s, { previous, base, goalRows, fmt, fmtK, pct, whatIfs, nameOf }
       })()
     : `<p class="muted">This is the first statement, so it is the baseline. Later reviews will show what changed and why: money saved, market moves, or changed assumptions.</p>`;
 
-  return readerDates(`<!doctype html><html><head><meta charset="utf-8"><title>Personal Financial Statement · ${esc(longDate(s.asOf))}</title>
+  return readerDates(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Personal Financial Statement · ${esc(longDate(s.asOf))}</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;600;700&display=swap">
 <style>
   @page { size: Letter; margin: 0.5in 0.6in; }
@@ -300,6 +300,38 @@ function render(s, { previous, base, goalRows, fmt, fmtK, pct, whatIfs, nameOf }
   .bdg { display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; border-radius: 50%; font-size: 9px; font-weight: 800; line-height: 1; flex: none; border: 1px solid; }
   .bdg-ok { color: #1f7a4d; background: #e7f4ec; border-color: #1f7a4d55; } .bdg-behind { color: #b5651d; background: #fbefe3; border-color: #b5651d55; } .bdg-self { color: #3b5b8a; background: #eaf0f8; border-color: #3b5b8a55; }
   .foot { font-size: 8.5pt; color: var(--muted); margin-top: 18px; }
+
+  /* ── Screen: each section reads as a letter page with margins (print keeps @page) ── */
+  @media screen { body { background: #f7f8fa; } section { max-width: 8.5in; margin: 0 auto; padding: 0.5in 0.6in; background: #fff; } section + section { margin-top: 12px; } }
+  /* ── Phone: the same statement, reflowed to one or two columns ── */
+  @media screen and (max-width: 640px) {
+    body { font-size: 14px; }
+    section { padding: 16px; max-width: none; }
+    section + section { margin-top: 10px; }
+    h1 { font-size: 22px; } h2 { font-size: 18px; } h2 small { display: block; margin-top: 2px; font-size: 12px; } h3 { font-size: 15px; }
+    .p1-head { flex-direction: column; align-items: flex-start; gap: 2px; }
+    .p1-head h1 { white-space: normal; font-size: 20px; } .p1-head .muted { text-align: left; font-size: 12px; }
+    .bento { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .tile.hero { grid-column: 1 / -1; grid-row: auto; } .tile.hero b { font-size: 40px; }
+    .tile.wide, .tile.full { grid-column: 1 / -1; }
+    .tile.wide .chart-legend { flex-wrap: wrap; white-space: normal; }
+    .tile.kpi b { font-size: 20px; } .tile.kpi b small { font-size: 12px; }
+    .tile .q, .tile.kpi div > span, .tile-h .muted { font-size: 12px; }
+    .tile-h { flex-wrap: wrap; gap: 0 8px; } .tile-h b { font-size: 15px; }
+    .tile.dark { flex-direction: column; gap: 8px; }
+    .two, .cards, .goal-grid2, .viz { grid-template-columns: minmax(0, 1fr); flex-direction: column; }
+    .strip, .goal-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .gcard-facts { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+    .gcard-h, .goal-h, .g2-h, .g2-f { flex-wrap: wrap; }
+    .glance-row { grid-template-columns: minmax(0, 1fr) 56px; row-gap: 2px; } .glance-row > :first-child { grid-column: 1 / -1; }
+    .card .a { font-size: 22px; } .strip b { font-size: 18px; }
+    .page-key, .legend, .chart-legend, .legend-row, .goal-what, .goal-conf, .foot, .src, .tier, .glance-row .cap, .pbar-legend { font-size: 12px; }
+    p, li, .callout, ol.decisions, section.compact p, section.compact li, section.compact .callout { font-size: 14px; }
+    /* Wide tables scroll inside their own box instead of pushing the page sideways */
+    table { display: block; overflow-x: auto; font-size: 13px; } table > tbody { display: table; width: 100%; }
+    section.compact table { font-size: 12px; } th { font-size: 11px; } td, section.compact td { padding: 4px 6px; }
+    .src { white-space: normal; display: inline-block; }
+  }
 </style></head><body>
 
 <section class="first">
